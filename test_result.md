@@ -101,3 +101,360 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Build a complete professional mobile app UI/UX for Greyads - an event ticketing and QR entry
+  management platform. Dark/black theme, role-based login (user/admin/staff), separate admin entry
+  point. The app should look like a multi-million dollar company's app. Inspired by Luma app.
+
+backend:
+  - task: "User Registration and Login API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/auth/register and POST /api/auth/login implemented with JWT tokens and role-based access. Seed data tested and working."
+
+  - task: "Events CRUD API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/events, GET /api/events/{id}, POST /api/events (admin only), DELETE /api/events/{id} all implemented and tested."
+
+  - task: "Ticket Booking API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/tickets/book, GET /api/tickets/my, GET /api/tickets/{id} working. QR token generated as UUID."
+
+  - task: "QR Scanner Verify API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/scanner/verify and GET /api/scanner/history implemented. Staff role required."
+
+  - task: "Admin Stats and Management API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/admin/stats, /admin/users, /admin/tickets all working with admin role requirement."
+
+  - task: "Seed Data API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/seed creates 3 users (user/staff/admin), 5 events, 2 tickets for test user."
+
+frontend:
+  - task: "Splash Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Animated splash with GreyAdz logo and tagline. Routes to onboarding or correct dashboard based on role."
+
+  - task: "Onboarding Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/onboarding.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "3-slide onboarding with purple/blue/green theme. Screenshot verified working."
+
+  - task: "User Login Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(auth)/login.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Login with demo buttons for User/Staff/Admin. API integration working. Bug fixed: token key mismatch (was 'token', now 'greyads_token')."
+
+  - task: "User Signup Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(auth)/signup.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Signup form implemented with API integration. Not tested yet."
+
+  - task: "Home / Discover Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Featured event + all events grid. Category filters. Search. Pull-to-refresh. Screenshot verified."
+
+  - task: "Event Detail Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/event/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Hero image, meta info, capacity bar, tags, Book Ticket CTA. Screenshot verified."
+
+  - task: "Book Ticket Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/book/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Quantity selector, price breakdown, confirmation. API integration done. Not tested end-to-end."
+
+  - task: "Digital Ticket / QR Code Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/ticket/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "White ticket card design with QR code, booking ref, status. Screenshot verified."
+
+  - task: "My Tickets Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/tickets.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Ticket card list with status badges, hole/dashed effect. 2 seeded tickets shown. Screenshot verified."
+
+  - task: "Profile Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/profile.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "User info, menu groups, logout. Screenshot verified."
+
+  - task: "Notifications Screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/notifications.tsx"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Static notifications with 5 mock items. Not connected to real backend notifications."
+
+  - task: "Admin Login Screen"
+    implemented: true
+    working: false
+    file: "frontend/app/(admin)/login.tsx"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "main"
+        comment: "BUG FIXED: RootRedirect was blocking unauthenticated access to /(admin)/login. Fixed by adding isAdminLogin check in _layout.tsx. Needs verification."
+
+  - task: "Admin Dashboard"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(admin)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Stats cards, revenue, recent events, quick actions. Backend API verified working."
+
+  - task: "Admin Events Management"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(admin)/events/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Event list with delete. Create event navigation. Not tested."
+
+  - task: "Admin Create Event"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(admin)/events/create.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Create event form with all fields, category picker, auto image. Not tested end-to-end."
+
+  - task: "Admin Analytics Screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(admin)/analytics.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "KPI cards, bar chart, category breakdown. Not tested."
+
+  - task: "Admin Users Screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(admin)/users.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "User list with role badges. Not tested."
+
+  - task: "Scanner Home Screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(scanner)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Stats (today/valid/failed), big scan button, info section. Not tested."
+
+  - task: "QR Scan Screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(scanner)/scan.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "CameraView with QR scanning, result overlay (success/already_used/invalid). Camera on web won't work but native should."
+
+  - task: "Scan History Screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(scanner)/history.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Scan log list with status. Not tested."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "Admin Login Screen"
+    - "Admin Dashboard"
+    - "Book Ticket Screen"
+    - "Scanner Home Screen"
+  stuck_tasks:
+    - "Admin Login Screen"
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Full app is implemented and mostly working. Key fixes done:
+      1. Fixed token key mismatch in api.ts (was 'token', now 'greyads_token')
+      2. Fixed RootRedirect blocking admin login page access
+      3. Added camera permissions to app.json
+      4. Seeded DB with test data
+
+      Demo credentials:
+      - User: user@test.com / Test@123
+      - Staff: staff@greyads.com / Staff@123  
+      - Admin: admin@greyads.com / Admin@123
+
+      Please test:
+      1. Admin login via /(auth)/login -> "Admin & Staff Login" link
+      2. Admin dashboard loads with stats
+      3. Booking a ticket flow (Event detail -> Book -> Confirm -> View QR)
+      4. Scanner home screen (login as staff)
+      5. Check that URL http://localhost:3000 works

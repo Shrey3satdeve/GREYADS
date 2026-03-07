@@ -19,8 +19,14 @@ function RootRedirect() {
     const inTabs = first === '(tabs)';
     const inOnboarding = first === 'onboarding';
 
+    const inAdminLogin = first === 'admin-login';
+
+    // Check if we're on admin login page (which doesn't need auth)
+    const isAdminLogin = inAdmin && (segments[1] === 'login');
+
     if (!token) {
-      if (!inAuth && !inOnboarding && first !== undefined) {
+      // Allow access to auth screens, onboarding, admin-login, and entire admin group without a token
+      if (!inAuth && !inOnboarding && !inAdmin && !inAdminLogin && first !== undefined) {
         router.replace('/onboarding');
       }
     } else {
@@ -28,7 +34,7 @@ function RootRedirect() {
         router.replace('/(admin)/');
       } else if (user?.role === 'staff' && !inScanner) {
         router.replace('/(scanner)/');
-      } else if (user?.role === 'user' && (inAuth || inOnboarding)) {
+      } else if (user?.role === 'user' && (inAuth || inOnboarding || inAdminLogin)) {
         router.replace('/(tabs)/');
       }
     }
@@ -46,6 +52,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="onboarding" />
+          <Stack.Screen name="admin-login" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="(admin)" />

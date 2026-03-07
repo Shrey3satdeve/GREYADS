@@ -128,7 +128,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           {/* Admin/Staff Login Link */}
-          <TouchableOpacity testID="admin-login-btn" onPress={() => router.push('/(admin)/login')} style={styles.adminRow}>
+          <TouchableOpacity testID="admin-login-btn" onPress={() => router.push('/admin-login')} style={styles.adminRow}>
             <Shield size={14} color={COLORS.textTertiary} />
             <Text style={styles.adminText}>Admin & Staff Login</Text>
           </TouchableOpacity>
