@@ -53,7 +53,12 @@ export default function AdminDashboard() {
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Sign out of admin panel?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: logout },
+      {
+        text: 'Sign Out', style: 'destructive', onPress: async () => {
+          await logout();
+          router.replace('/onboarding');
+        }
+      },
     ]);
   };
 

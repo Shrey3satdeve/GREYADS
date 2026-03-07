@@ -1,9 +1,10 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-import os, logging, uuid
+import os, logging, uuid, hashlib, base64, json
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, BeforeValidator
 from typing import List, Optional, Annotated, Any
@@ -11,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from bson import ObjectId
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -19,6 +21,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY') or 'greyads-fallback-dev-key-not-for-p
 if SECRET_KEY == 'greyads-fallback-dev-key-not-for-production':
     logger.warning("⚠️  SECRET_KEY not set in environment — using dev fallback. Set SECRET_KEY in .env for production!")
 ALGORITHM = "HS256"
+
+# ============ PhonePe Config (Test/Sandbox) ============
+PHONEPE_MERCHANT_ID = "PGTESTPAYUAT86"
+PHONEPE_SALT_KEY = "96434309-7796-489d-8924-ab56988a6076"
+PHONEPE_SALT_INDEX = "1"
+PHONEPE_BASE_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox"
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -139,12 +147,21 @@ class CreateEventRequest(BaseModel):
     description: str
     date: str
     venue: str
-    cover_image_url: str
+    cover_image_url: Optional[str] = None
+    cover_image_data: Optional[str] = None   # base64 poster upload
     category: str
     price: float
     total_tickets: int
     organizer_name: str
     tags: List[str] = []
+
+class PaymentInitiateRequest(BaseModel):
+    event_id: str
+    quantity: int = 1
+    mobile: Optional[str] = "9999999999"
+
+class PaymentWebhookRequest(BaseModel):
+    response: Optional[str] = None
 
 # ============ Auth Helpers ============
 def hash_password(p: str) -> str:
@@ -273,8 +290,25 @@ async def get_event(event_id: str):
 @api_router.post("/events")
 async def create_event(req: CreateEventRequest, current_user: User = Depends(require_admin)):
     event_date = datetime.fromisoformat(req.date.replace('Z', '+00:00'))
+    # Determine cover image: uploaded poster takes priority over URL
+    cover_url = req.cover_image_url or ''
+    if req.cover_image_data:
+        # Store base64 data URI directly
+        cover_url = req.cover_image_data
+    elif not cover_url:
+        # Default by category
+        defaults = {
+            'Music': 'https://images.unsplash.com/photo-1571751239008-50cad6cb9265?w=800&q=80',
+            'Technology': 'https://images.unsplash.com/photo-1540317228636-69a076b0b248?w=800&q=80',
+            'Food': 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80',
+            'Business': 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=800&q=80',
+            'Sports': 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&q=80',
+            'Arts': 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800&q=80',
+            'Fashion': 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80',
+        }
+        cover_url = defaults.get(req.category, defaults['Music'])
     event = Event(title=req.title, description=req.description, date=event_date, venue=req.venue,
-                  cover_image_url=req.cover_image_url, category=req.category, price=req.price,
+                  cover_image_url=cover_url, category=req.category, price=req.price,
                   total_tickets=req.total_tickets, available_tickets=req.total_tickets,
                   organizer_name=req.organizer_name, tags=req.tags)
     result = await db.events.insert_one(event.to_mongo())
@@ -439,7 +473,152 @@ async def seed_data():
 
     return {"message": "Seed data created", "users": len(users), "events": len(events_data), "tickets": 2}
 
-# ============ App Setup ============
+# ============ PhonePe Helpers ============
+def phonepe_checksum(payload_b64: str, endpoint: str) -> str:
+    data = payload_b64 + endpoint + PHONEPE_SALT_KEY
+    return hashlib.sha256(data.encode()).hexdigest() + "###" + PHONEPE_SALT_INDEX
+
+def phonepe_status_checksum(merchant_id: str, txn_id: str) -> str:
+    endpoint = f"/pg/v1/status/{merchant_id}/{txn_id}"
+    data = endpoint + PHONEPE_SALT_KEY
+    return hashlib.sha256(data.encode()).hexdigest() + "###" + PHONEPE_SALT_INDEX
+
+# ============ Payment Routes ============
+@api_router.post("/payments/initiate")
+async def initiate_payment(req: PaymentInitiateRequest, current_user: User = Depends(get_current_user)):
+    # Fetch event
+    try:
+        event_doc = await db.events.find_one({"_id": ObjectId(req.event_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid event ID")
+    if not event_doc:
+        raise HTTPException(status_code=404, detail="Event not found")
+    event = Event.from_mongo(dict(event_doc))
+    if event.available_tickets < req.quantity:
+        raise HTTPException(status_code=400, detail="Not enough tickets available")
+
+    amount_paise = int(event.price * req.quantity * 100)  # PhonePe uses paise
+    txn_id = f"GRY-{uuid.uuid4().hex[:12].upper()}"
+
+    # Create pending ticket
+    ticket = Ticket(
+        event_id=req.event_id, user_id=current_user.id, user_name=current_user.name,
+        user_email=current_user.email, event_title=event.title, event_date=event.date,
+        event_venue=event.venue, qr_token=str(uuid.uuid4()),
+        booking_ref=txn_id, status="pending",
+        quantity=req.quantity, total_price=event.price * req.quantity
+    )
+    ticket_result = await db.tickets.insert_one(ticket.to_mongo())
+    ticket_id = str(ticket_result.inserted_id)
+
+    # Build PhonePe payload
+    backend_url = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://event-ui-pro.preview.emergentagent.com/api")
+    redirect_url = f"{backend_url}/payments/callback/{txn_id}"
+    callback_url = f"{backend_url}/payments/webhook"
+
+    payload = {
+        "merchantId": PHONEPE_MERCHANT_ID,
+        "merchantTransactionId": txn_id,
+        "merchantUserId": f"MU{current_user.id[:8]}",
+        "amount": amount_paise,
+        "redirectUrl": redirect_url,
+        "redirectMode": "GET",
+        "callbackUrl": callback_url,
+        "mobileNumber": req.mobile or "9999999999",
+        "paymentInstrument": {"type": "PAY_PAGE"}
+    }
+    payload_b64 = base64.b64encode(json.dumps(payload).encode()).decode()
+    checksum = phonepe_checksum(payload_b64, "/pg/v1/pay")
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client_http:
+            resp = await client_http.post(
+                f"{PHONEPE_BASE_URL}/pg/v1/pay",
+                headers={"Content-Type": "application/json", "X-VERIFY": checksum},
+                json={"request": payload_b64}
+            )
+            data = resp.json()
+    except Exception as e:
+        logger.error(f"PhonePe API error: {e}")
+        raise HTTPException(status_code=502, detail="Payment gateway error. Please try again.")
+
+    if not data.get("success"):
+        raise HTTPException(status_code=400, detail=data.get("message", "Payment initiation failed"))
+
+    redirect_info = data["data"]["instrumentResponse"]["redirectInfo"]
+    # Store txn_id → ticket_id mapping
+    await db.payment_orders.insert_one({
+        "txn_id": txn_id, "ticket_id": ticket_id, "event_id": req.event_id,
+        "user_id": current_user.id, "amount": amount_paise, "status": "pending",
+        "created_at": datetime.now(timezone.utc)
+    })
+
+    return {
+        "payment_url": redirect_info["url"],
+        "txn_id": txn_id,
+        "ticket_id": ticket_id,
+        "amount": event.price * req.quantity
+    }
+
+@api_router.get("/payments/status/{txn_id}")
+async def payment_status(txn_id: str, current_user: User = Depends(get_current_user)):
+    order = await db.payment_orders.find_one({"txn_id": txn_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    checksum = phonepe_status_checksum(PHONEPE_MERCHANT_ID, txn_id)
+    try:
+        async with httpx.AsyncClient(timeout=15) as client_http:
+            resp = await client_http.get(
+                f"{PHONEPE_BASE_URL}/pg/v1/status/{PHONEPE_MERCHANT_ID}/{txn_id}",
+                headers={"Content-Type": "application/json", "X-VERIFY": checksum, "X-MERCHANT-ID": PHONEPE_MERCHANT_ID}
+            )
+            data = resp.json()
+    except Exception as e:
+        logger.error(f"PhonePe status error: {e}")
+        raise HTTPException(status_code=502, detail="Unable to check payment status")
+
+    pg_status = data.get("data", {}).get("state", "PENDING")
+    ticket_id = order.get("ticket_id")
+
+    if pg_status == "COMPLETED":
+        await db.tickets.update_one({"_id": ObjectId(ticket_id)}, {"$set": {"status": "valid"}})
+        await db.events.update_one({"_id": ObjectId(order["event_id"])}, {"$inc": {"available_tickets": -order.get("quantity", 1)}})
+        await db.payment_orders.update_one({"txn_id": txn_id}, {"$set": {"status": "completed"}})
+        return {"status": "COMPLETED", "ticket_id": ticket_id, "txn_id": txn_id}
+    elif pg_status == "FAILED":
+        await db.tickets.delete_one({"_id": ObjectId(ticket_id)})
+        await db.payment_orders.update_one({"txn_id": txn_id}, {"$set": {"status": "failed"}})
+        return {"status": "FAILED", "ticket_id": None, "txn_id": txn_id}
+    else:
+        return {"status": "PENDING", "ticket_id": ticket_id, "txn_id": txn_id}
+
+@api_router.get("/payments/callback/{txn_id}")
+async def payment_callback(txn_id: str):
+    """PhonePe redirects user here after payment. Redirect to frontend."""
+    frontend_url = os.environ.get("EXPO_PACKAGER_HOSTNAME", "https://event-ui-pro.preview.emergentagent.com")
+    return RedirectResponse(url=f"{frontend_url}/payment-result?txn_id={txn_id}")
+
+@api_router.post("/payments/webhook")
+async def payment_webhook(req: PaymentWebhookRequest):
+    """PhonePe server-to-server callback"""
+    if req.response:
+        try:
+            decoded = json.loads(base64.b64decode(req.response).decode())
+            txn_id = decoded.get("data", {}).get("merchantTransactionId")
+            state = decoded.get("data", {}).get("state")
+            if txn_id and state == "COMPLETED":
+                order = await db.payment_orders.find_one({"txn_id": txn_id})
+                if order:
+                    ticket_id = order.get("ticket_id")
+                    await db.tickets.update_one({"_id": ObjectId(ticket_id)}, {"$set": {"status": "valid"}})
+                    await db.events.update_one({"_id": ObjectId(order["event_id"])}, {"$inc": {"available_tickets": -1}})
+                    await db.payment_orders.update_one({"txn_id": txn_id}, {"$set": {"status": "completed"}})
+        except Exception as e:
+            logger.error(f"Webhook error: {e}")
+    return {"success": True}
+
+
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 

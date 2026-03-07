@@ -59,7 +59,7 @@ export default function RootLayout() {
           <Stack.Screen name="(scanner)" />
           <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="book/[id]" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-          <Stack.Screen name="ticket/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="payment-result" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
       </AuthProvider>
     </GestureHandlerRootView>

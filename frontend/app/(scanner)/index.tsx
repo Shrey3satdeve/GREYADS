@@ -45,7 +45,7 @@ export default function ScannerHomeScreen() {
             <Text style={styles.headerTitle}>Scanner Mode</Text>
             <Text style={styles.headerSub}>Staff: {user?.name}</Text>
           </View>
-          <TouchableOpacity testID="scanner-logout-btn" style={styles.logoutBtn} onPress={logout}>
+          <TouchableOpacity testID="scanner-logout-btn" style={styles.logoutBtn} onPress={async () => { await logout(); router.replace('/onboarding'); }}>
             <LogOut size={18} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
