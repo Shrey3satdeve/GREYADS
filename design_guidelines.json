@@ -1,0 +1,271 @@
+{
+  "brand_identity": {
+    "name": "GreyAdz.",
+    "ethos": "Industrial Luxury. The Velvet Rope. Digital Noir.",
+    "core_values": [
+      "Exclusivity",
+      "Immersion",
+      "Tactile Utility"
+    ],
+    "visual_mood": "Deep matte blacks, cinematographic lighting, high-precision typography, holographic accents.",
+    "logo_usage": "White wordmark on dark. Icon is a minimal megaphone constructed from geometric primitives."
+  },
+  "design_system": {
+    "color_palette": {
+      "theme": "dark",
+      "colors": {
+        "background": {
+          "primary": "#000000",
+          "secondary": "#09090B",
+          "tertiary": "#121212",
+          "modal_overlay": "rgba(0,0,0,0.85)"
+        },
+        "text": {
+          "primary": "#FFFFFF",
+          "secondary": "#A1A1AA",
+          "tertiary": "#52525B",
+          "disabled": "#3F3F46",
+          "inverse": "#000000"
+        },
+        "border": {
+          "subtle": "#27272A",
+          "default": "#3F3F46",
+          "focus": "#FFFFFF"
+        },
+        "action": {
+          "primary_bg": "#FFFFFF",
+          "primary_text": "#000000",
+          "secondary_bg": "#27272A",
+          "secondary_text": "#FFFFFF",
+          "destructive": "#7F1D1D"
+        },
+        "signals": {
+          "success": "#22C55E",
+          "error": "#EF4444",
+          "warning": "#F59E0B",
+          "info": "#3B82F6",
+          "scanner_laser": "#EF4444",
+          "scanner_valid": "#22C55E"
+        }
+      },
+      "gradients": {
+        "ticket_hologram": ["#3f3f46", "#71717a", "#3f3f46"],
+        "bottom_fade": ["transparent", "rgba(0,0,0,0.9)"],
+        "hero_glow": ["rgba(255,255,255,0.1)", "transparent"]
+      }
+    },
+    "typography": {
+      "font_family": {
+        "headings": "Outfit-Bold",
+        "subheadings": "Outfit-Medium",
+        "body": "Inter-Regular",
+        "monospace": "Menlo"
+      },
+      "scale": {
+        "display": { "fontSize": 48, "lineHeight": 52, "letterSpacing": -1 },
+        "h1": { "fontSize": 32, "lineHeight": 36, "letterSpacing": -0.5 },
+        "h2": { "fontSize": 24, "lineHeight": 32, "letterSpacing": -0.3 },
+        "h3": { "fontSize": 20, "lineHeight": 28, "letterSpacing": -0.2 },
+        "body_lg": { "fontSize": 18, "lineHeight": 26 },
+        "body_md": { "fontSize": 16, "lineHeight": 24 },
+        "body_sm": { "fontSize": 14, "lineHeight": 20 },
+        "caption": { "fontSize": 12, "lineHeight": 16, "textTransform": "uppercase", "letterSpacing": 1 }
+      }
+    },
+    "spacing": {
+      "xs": 4,
+      "sm": 8,
+      "md": 16,
+      "lg": 24,
+      "xl": 32,
+      "2xl": 48,
+      "3xl": 64,
+      "safe_area_bottom": 34
+    },
+    "borders": {
+      "radius": {
+        "sm": 6,
+        "md": 12,
+        "lg": 16,
+        "xl": 24,
+        "full": 9999
+      },
+      "width": {
+        "hairline": 0.5,
+        "thin": 1,
+        "thick": 2
+      }
+    },
+    "shadows": {
+      "sm": {
+        "shadowColor": "#000",
+        "shadowOffset": { "width": 0, "height": 1 },
+        "shadowOpacity": 0.18,
+        "shadowRadius": 1.0,
+        "elevation": 1
+      },
+      "md": {
+        "shadowColor": "#000",
+        "shadowOffset": { "width": 0, "height": 2 },
+        "shadowOpacity": 0.25,
+        "shadowRadius": 3.84,
+        "elevation": 5
+      },
+      "glow": {
+        "shadowColor": "#FFF",
+        "shadowOffset": { "width": 0, "height": 0 },
+        "shadowOpacity": 0.3,
+        "shadowRadius": 20,
+        "elevation": 10
+      }
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": {
+        "style": {
+          "backgroundColor": "#FFFFFF",
+          "borderRadius": 9999,
+          "paddingVertical": 16,
+          "paddingHorizontal": 32,
+          "alignItems": "center",
+          "justifyContent": "center",
+          "shadowColor": "#FFF",
+          "shadowOpacity": 0.2,
+          "shadowRadius": 10
+        },
+        "textStyle": {
+          "color": "#000000",
+          "fontWeight": "700",
+          "fontSize": 16,
+          "letterSpacing": 0.5
+        }
+      },
+      "secondary": {
+        "style": {
+          "backgroundColor": "#27272A",
+          "borderRadius": 9999,
+          "paddingVertical": 16,
+          "paddingHorizontal": 32,
+          "alignItems": "center"
+        },
+        "textStyle": {
+          "color": "#FFFFFF",
+          "fontWeight": "600",
+          "fontSize": 16
+        }
+      },
+      "ghost": {
+        "style": {
+          "backgroundColor": "transparent",
+          "padding": 12
+        },
+        "textStyle": {
+          "color": "#A1A1AA",
+          "fontSize": 14
+        }
+      }
+    },
+    "cards": {
+      "event_poster": {
+        "aspectRatio": 0.75,
+        "borderRadius": 24,
+        "backgroundColor": "#18181B",
+        "overflow": "hidden"
+      },
+      "ticket_stub": {
+        "backgroundColor": "#FFFFFF",
+        "borderRadius": 16,
+        "padding": 24,
+        "borderStyle": "dashed",
+        "borderColor": "#000",
+        "borderWidth": 1
+      }
+    },
+    "inputs": {
+      "default": {
+        "backgroundColor": "#18181B",
+        "borderRadius": 12,
+        "padding": 16,
+        "color": "#FFFFFF",
+        "fontSize": 16,
+        "borderWidth": 1,
+        "borderColor": "#27272A"
+      }
+    },
+    "navigation": {
+      "tab_bar": {
+        "position": "absolute",
+        "bottom": 30,
+        "left": 20,
+        "right": 20,
+        "height": 64,
+        "borderRadius": 32,
+        "backgroundColor": "rgba(20, 20, 22, 0.85)",
+        "borderTopWidth": 0,
+        "elevation": 0,
+        "blur": "dark"
+      }
+    }
+  },
+  "assets": {
+    "icons_library": "lucide-react-native",
+    "image_urls": {
+      "event_concert": {
+        "url": "https://images.unsplash.com/photo-1571751239008-50cad6cb9265",
+        "desc": "Crowd in red light, moody club vibe"
+      },
+      "event_tech": {
+        "url": "https://images.unsplash.com/photo-1638804092353-58df91a322ad",
+        "desc": "Dark blue abstract tech background"
+      },
+      "event_social": {
+        "url": "https://images.unsplash.com/photo-1702302014150-071425a164ae",
+        "desc": "Night gathering, outdoor social"
+      },
+      "event_keynote": {
+        "url": "https://images.unsplash.com/photo-1540317228636-69a076b0b248",
+        "desc": "Large screen keynote stage"
+      },
+      "scanner_overlay": {
+        "type": "svg_path",
+        "desc": "Corner brackets and a scanning laser line"
+      }
+    }
+  },
+  "animations": {
+    "presets": {
+      "modal_slide": "SlideModal",
+      "fade": "FadeIn",
+      "scale_press": {
+        "active": 0.96,
+        "duration": 100
+      }
+    },
+    "libraries": [
+      "react-native-reanimated",
+      "react-native-gesture-handler",
+      "moti"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "1. SYSTEM: This is a React Native Expo (SDK 54) project. DO NOT use HTML tags (div, span). Use View, Text, TouchableOpacity, ScrollView.",
+    "2. STYLING: Use StyleSheet.create(). Avoid inline styles for performance. DO NOT use Tailwind/NativeWind unless explicitly configured (assume standard StyleSheet).",
+    "3. NAVIGATION: Use expo-router (file-based routing) or @react-navigation/native. Structure files in /app directory.",
+    "4. ICONS: Use Lucide React Native. <Icon size={24} color='#FFF' />.",
+    "5. SAFE AREA: Always wrap screen content in <SafeAreaView> or handle insets with react-native-safe-area-context.",
+    "6. THEME: Strict Dark Mode. No light mode toggle. Force StatusBar style to 'light'.",
+    "7. SCANNER: Use expo-camera. Ensure you request permissions first.",
+    "8. BLUR: Use <BlurView intensity={80} tint='dark'> from expo-blur for glass effects.",
+    "9. GRADIENTS: Use <LinearGradient> from expo-linear-gradient for image overlays and buttons.",
+    "10. TESTING: Add testID='...' to all interactive elements."
+  ],
+  "universal_guidelines_react_native": [
+    "Avoid 'eager' platform specific code. Use Platform.OS === 'ios' only when necessary.",
+    "Images: Always set width/height or flex on <Image>. Use contentFit='cover' (expo-image preferred).",
+    "Text: Text strings must be wrapped in <Text> component. Cannot have raw text inside <View>.",
+    "Layout: Flexbox is default. flex: 1 is your best friend.",
+    "Lists: Use <FlatList> for events/tickets. Never use <ScrollView> for long lists.",
+    "Touchable: Use TouchableOpacity with activeOpacity={0.7} for standard buttons."
+  ]
+}
