@@ -15,7 +15,9 @@ from bson import ObjectId
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-SECRET_KEY = os.environ.get('SECRET_KEY', 'greyads-2026-ultra-secure-key-xzy-abc')
+SECRET_KEY = os.environ.get('SECRET_KEY') or 'greyads-fallback-dev-key-not-for-production'
+if SECRET_KEY == 'greyads-fallback-dev-key-not-for-production':
+    logger.warning("⚠️  SECRET_KEY not set in environment — using dev fallback. Set SECRET_KEY in .env for production!")
 ALGORITHM = "HS256"
 
 mongo_url = os.environ['MONGO_URL']
@@ -367,8 +369,11 @@ async def admin_stats(current_user: User = Depends(require_admin)):
     total_events = await db.events.count_documents({})
     total_users = await db.users.count_documents({"role": "user"})
     total_tickets = await db.tickets.count_documents({})
-    tickets = await db.tickets.find({}).to_list(1000)
-    total_revenue = sum(t.get("total_price", 0) for t in tickets)
+    # Use aggregation pipeline for revenue calculation (efficient - no full doc load)
+    revenue_result = await db.tickets.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$total_price"}}}
+    ]).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     todays_scans = await db.scan_logs.count_documents({"timestamp": {"$gte": today_start}})
     recent_events = await db.events.find().sort("created_at", -1).limit(5).to_list(5)
