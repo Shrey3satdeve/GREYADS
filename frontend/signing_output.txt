@@ -1,0 +1,420 @@
+> Task :gradle-plugin:shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle-plugin:settings-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle-plugin:settings-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:shared:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:shared:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:compileJava NO-SOURCE
+> Task :gradle-plugin:shared:processResources NO-SOURCE
+> Task :gradle-plugin:shared:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:processResources NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:jar UP-TO-DATE
+> Task :gradle-plugin:shared:jar UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:settings-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:classes UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle-plugin:react-native-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-launcher-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-module-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-module-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-module-gradle-plugin:processResources UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:pluginDescriptors UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:react-native-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:classes UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:jar UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:jar UP-TO-DATE
+> Task :expo-module-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-module-gradle-plugin:compileJava NO-SOURCE
+> Task :expo-module-gradle-plugin:classes UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:compileJava NO-SOURCE
+> Task :expo-dev-launcher-gradle-plugin:classes UP-TO-DATE
+> Task :expo-module-gradle-plugin:jar UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:jar UP-TO-DATE
+
+> Configure project :app
+ ??  [33mApplying gradle plugin[0m '[32mexpo-dev-launcher-gradle-plugin[0m'
+
+> Configure project :
+[32m[ExpoRootProject][0m Using the following versions:
+  - buildTools:  [32m36.0.0[0m
+  - minSdk:      [32m24[0m
+  - compileSdk:  [32m36[0m
+  - targetSdk:   [32m36[0m
+  - ndk:         [32m27.1.12297006[0m
+  - kotlin:      [32m2.1.20[0m
+  - ksp:         [32m2.1.20-2.0.1[0m
+
+> Configure project :expo
+
+Using expo modules
+  - [32mexpo-constants[0m (18.0.13)
+  - [32mexpo-dev-client[0m (6.0.20)
+  - [32mexpo-dev-launcher[0m (6.0.20)
+  - [32mexpo-dev-menu[0m (7.0.18)
+  - [32mexpo-dev-menu-interface[0m (2.0.0)
+  - [32mexpo-json-utils[0m (0.15.0)
+  - [32mexpo-manifests[0m (1.0.10)
+  - [32mexpo-modules-core[0m (3.0.29)
+  - [32mexpo-updates-interface[0m (2.0.0)
+  - [33m[?][0m [32mexpo-asset[0m (12.0.12)
+  - [33m[?][0m [32mexpo-blur[0m (15.0.8)
+  - [33m[?][0m [32mexpo-camera[0m (17.0.10)
+  - [33m[?][0m [32mexpo-file-system[0m (19.0.21)
+  - [33m[?][0m [32mexpo-font[0m (14.0.11)
+  - [33m[?][0m [32mexpo-haptics[0m (15.0.8)
+  - [33m[?][0m [32mexpo-image[0m (3.0.11)
+  - [33m[?][0m [32mexpo-image-loader[0m (6.0.0)
+  - [33m[?][0m [32mexpo-image-picker[0m (17.0.10)
+  - [33m[?][0m [32mexpo-keep-awake[0m (15.0.8)
+  - [33m[?][0m [32mexpo-linear-gradient[0m (15.0.8)
+  - [33m[?][0m [32mexpo-linking[0m (8.0.11)
+  - [33m[?][0m [32mexpo-splash-screen[0m (31.0.13)
+  - [33m[?][0m [32mexpo-system-ui[0m (6.0.9)
+  - [33m[?][0m [32mexpo-web-browser[0m (15.0.10)
+
+
+> Configure project :react-native-firebase_app
+:react-native-firebase_app package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\app\package.json
+:react-native-firebase_app:firebase.bom using default value: 34.8.0
+:react-native-firebase_app:play.play-services-auth using default value: 21.4.0
+:react-native-firebase_app package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\app\package.json
+:react-native-firebase_app:version set from package.json: 23.8.6 (23,8,6 - 23008006)
+:react-native-firebase_app:android.compileSdk using custom value: 36
+:react-native-firebase_app:android.targetSdk using custom value: 36
+:react-native-firebase_app:android.minSdk using custom value: 24
+:react-native-firebase_app:reactNativeAndroidDir D:\GREYADS\frontend\node_modules\react-native
+
+> Configure project :react-native-firebase_auth
+:react-native-firebase_auth package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\auth\package.json
+:react-native-firebase_app package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\app\package.json
+:react-native-firebase_auth:firebase.bom using default value: 34.8.0
+:react-native-firebase_auth package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\auth\package.json
+:react-native-firebase_auth:version set from package.json: 23.8.6 (23,8,6 - 23008006)
+:react-native-firebase_auth:android.compileSdk using custom value: 36
+:react-native-firebase_auth:android.targetSdk using custom value: 36
+:react-native-firebase_auth:android.minSdk using custom value: 24
+:react-native-firebase_auth:reactNativeAndroidDir D:\GREYADS\frontend\node_modules\react-native
+
+> Configure project :react-native-firebase_firestore
+:react-native-firebase_firestore package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\firestore\package.json
+:react-native-firebase_app package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\app\package.json
+:react-native-firebase_firestore:firebase.bom using default value: 34.8.0
+:react-native-firebase_firestore package.json found at D:\GREYADS\frontend\node_modules\@react-native-firebase\firestore\package.json
+:react-native-firebase_firestore:version set from package.json: 23.8.6 (23,8,6 - 23008006)
+:react-native-firebase_firestore:android.compileSdk using custom value: 36
+:react-native-firebase_firestore:android.targetSdk using custom value: 36
+:react-native-firebase_firestore:android.minSdk using custom value: 24
+:react-native-firebase_firestore:reactNativeAndroidDir D:\GREYADS\frontend\node_modules\react-native
+
+> Task :app:signingReport
+Variant: debug
+Config: debug
+Store: D:\GREYADS\frontend\android\app\debug.keystore
+Alias: androiddebugkey
+MD5: 20:F4:61:48:B7:2D:8E:5E:5C:A2:3D:37:A4:F4:14:90
+SHA1: 5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+SHA-256: FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C
+Valid until: Wednesday, 1 May, 2052
+----------
+Variant: release
+Config: debug
+Store: D:\GREYADS\frontend\android\app\debug.keystore
+Alias: androiddebugkey
+MD5: 20:F4:61:48:B7:2D:8E:5E:5C:A2:3D:37:A4:F4:14:90
+SHA1: 5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+SHA-256: FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C
+Valid until: Wednesday, 1 May, 2052
+----------
+Variant: debugOptimized
+Config: debug
+Store: D:\GREYADS\frontend\android\app\debug.keystore
+Alias: androiddebugkey
+MD5: 20:F4:61:48:B7:2D:8E:5E:5C:A2:3D:37:A4:F4:14:90
+SHA1: 5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+SHA-256: FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C
+Valid until: Wednesday, 1 May, 2052
+----------
+Variant: debugAndroidTest
+Config: debug
+Store: D:\GREYADS\frontend\android\app\debug.keystore
+Alias: androiddebugkey
+MD5: 20:F4:61:48:B7:2D:8E:5E:5C:A2:3D:37:A4:F4:14:90
+SHA1: 5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+SHA-256: FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C
+Valid until: Wednesday, 1 May, 2052
+----------
+
+> Task :react-native-gesture-handler:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-modules-core:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-dev-launcher:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-constants:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-json-utils:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-async-storage_async-storage:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-dev-menu:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-firebase_firestore:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-updates-interface:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-dev-client:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-dev-menu-interface:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-firebase_app:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-firebase_auth:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :expo-manifests:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-google-signin_google-signin:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-safe-area-context:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-worklets:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-reanimated:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-screens:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-svg:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+> Task :react-native-webview:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\shrey\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: DD:8E:7A:17:32:73:A6:AE:D7:70:0B:E1:4C:C6:E3:2C
+SHA1: D2:8E:FB:99:D4:77:8E:49:81:33:54:88:33:9E:41:0B:39:5A:5B:5C
+SHA-256: 7E:8D:2D:95:C0:AE:BA:89:2F:25:75:60:18:96:28:82:47:79:14:C3:79:27:FD:D1:73:89:57:8A:CC:0D:8E:98
+Valid until: Saturday, 23 October, 2055
+----------
+
+[Incubating] Problems report is available at: file:///D:/GREYADS/frontend/android/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 4s
+51 actionable tasks: 23 executed, 28 up-to-date

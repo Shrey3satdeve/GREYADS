@@ -6,8 +6,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, MapPin, Calendar, TrendingUp, Zap, Star } from 'lucide-react-native';
+import { Search, MapPin, Calendar, TrendingUp, Zap, Star, Sun, CloudSun, Moon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import BrandMark from '../../components/BrandMark';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, CATEGORY_COLORS, CATEGORY_BG, CATEGORIES, FONT_SIZE } from '../../constants/theme';
 import { rw, rh, rf, rs, SCREEN_W, isSmallPhone, GRID_CARD } from '../../utils/responsive';
@@ -77,14 +78,25 @@ export default function HomeScreen() {
   const firstName = (user?.name || 'Explorer').split(' ')[0].slice(0, FIRST_NAME_MAX);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const GreetingIcon = hour < 12 ? Sun : hour < 17 ? CloudSun : Moon;
 
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: COLORS.bg }}>
         {/* Header */}
         <View style={styles.headerRow}>
+          <View style={styles.headerLogoContainer}>
+            <Image 
+              source={require('../../assets/images/greyadz-logo-v3.png')}
+              style={{ width: 48, height: 48 }}
+              resizeMode="contain"
+            />
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { fontSize: rf(12) }]}>{greeting} 👋</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={[styles.greeting, { fontSize: rf(12) }]}>{greeting}</Text>
+              <GreetingIcon size={rf(12)} color={COLORS.textTertiary} strokeWidth={2} />
+            </View>
             <Text style={[styles.name, { fontSize: rf(22) }]} numberOfLines={1}>Hello, {firstName}</Text>
           </View>
           <TouchableOpacity style={styles.notifBtn} onPress={() => router.push('/(tabs)/notifications')}>
@@ -140,7 +152,7 @@ export default function HomeScreen() {
             {/* Featured Event — 3D Hero Card */}
             {featured && (
               <Animated.View style={{ transform: [{ scale: heroScale }], opacity: fadeAnim }}>
-                <Text style={[styles.sectionTitle, { fontSize: rf(13) }]}>✨ Featured</Text>
+                <Text style={[styles.sectionTitle, { fontSize: rf(13) }]}>Featured</Text>
                 <TouchableOpacity
                   testID={`featured-event-${featured.id}`}
                   activeOpacity={0.92}
@@ -193,7 +205,7 @@ export default function HomeScreen() {
             {events.length > 0 && (
               <>
                 <Text style={[styles.sectionTitle, { fontSize: rf(13), marginTop: rs(20) }]}>
-                  {category === 'All' ? '🔥 All Events' : `${category} Events`}
+                  {category === 'All' ? 'All Events' : `${category} Events`}
                 </Text>
                 <View style={styles.grid}>
                   {events.map((evt, i) => (
@@ -289,6 +301,7 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: rs(16) },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(20), paddingTop: rs(4), paddingBottom: rs(8) },
+  headerLogoContainer: { marginRight: rs(12) },
   greeting: { color: COLORS.textTertiary, fontWeight: '500' },
   name: { color: COLORS.textPrimary, fontWeight: '800', letterSpacing: -0.5 },
   notifBtn: { width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },

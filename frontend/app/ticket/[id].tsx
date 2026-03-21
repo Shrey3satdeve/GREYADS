@@ -5,8 +5,10 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Share2, Download, MapPin, Calendar, Hash, User } from 'lucide-react-native';
+import { ArrowLeft, Share2, Download, MapPin, Calendar, User } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import BrandMark from '../../components/BrandMark';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 
@@ -27,9 +29,10 @@ interface TicketData {
 }
 
 const STATUS_CONFIG = {
-  valid: { color: '#22C55E', bg: '#22C55E15', label: 'VALID' },
-  used: { color: '#71717A', bg: '#71717A15', label: 'USED' },
-  cancelled: { color: '#EF4444', bg: '#EF444415', label: 'CANCELLED' },
+  valid: { color: '#000000', bg: 'rgba(255,255,255,0.4)', label: 'VALID' },
+  pending: { color: '#F59E0B', bg: 'rgba(245,158,11,0.15)', label: 'PENDING' },
+  used: { color: '#374151', bg: 'rgba(55,65,81,0.15)', label: 'USED' },
+  cancelled: { color: '#EF4444', bg: 'rgba(239,68,68,0.15)', label: 'CANCELLED' },
 };
 
 export default function DigitalTicketScreen() {
@@ -42,7 +45,7 @@ export default function DigitalTicketScreen() {
     if (!id) return;
     api.get(`/tickets/${id}`)
       .then(data => setTicket(data.ticket))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -85,14 +88,27 @@ export default function DigitalTicketScreen() {
       </SafeAreaView>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Ticket Card (white) */}
+        {/* Grey Metallic Ticket */}
         <View style={styles.ticketOuter}>
-          <View style={styles.ticketCard}>
+          <LinearGradient
+            colors={['#E5E7EB', '#D1D5DB', '#9CA3AF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.ticketCard}
+          >
+            {/* 45 Degree Branding Watermark */}
+            <View style={styles.watermarkContainer}>
+              <Text style={styles.watermarkText}>GREYADZ GREYADZ GREYADZ</Text>
+              <Text style={styles.watermarkText}>GREYADZ GREYADZ GREYADZ</Text>
+              <Text style={styles.watermarkText}>GREYADZ GREYADZ GREYADZ</Text>
+              <Text style={styles.watermarkText}>GREYADZ GREYADZ GREYADZ</Text>
+            </View>
+
             {/* Header */}
             <View style={styles.ticketHeader}>
               <View style={styles.logoRowSmall}>
-                <View style={styles.logoCircle}>
-                  <Text style={styles.logoG}>G</Text>
+                <View style={styles.logoCircleDark}>
+                   <BrandMark size={32} imageScale={0.7} />
                 </View>
                 <Text style={styles.logoSmall}>GreyAdz.</Text>
               </View>
@@ -107,17 +123,17 @@ export default function DigitalTicketScreen() {
             {/* Details */}
             <View style={styles.ticketDetails}>
               <View style={styles.ticketDetailRow}>
-                <Calendar size={14} color="#71717A" />
+                <Calendar size={14} color="#374151" />
                 <Text style={styles.ticketDetailText}>
                   {eventDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                 </Text>
               </View>
               <View style={styles.ticketDetailRow}>
-                <MapPin size={14} color="#71717A" />
+                <MapPin size={14} color="#374151" />
                 <Text style={styles.ticketDetailText} numberOfLines={2}>{ticket.event_venue}</Text>
               </View>
               <View style={styles.ticketDetailRow}>
-                <User size={14} color="#71717A" />
+                <User size={14} color="#374151" />
                 <Text style={styles.ticketDetailText}>{ticket.user_name}</Text>
               </View>
             </View>
@@ -125,18 +141,20 @@ export default function DigitalTicketScreen() {
             {/* Dashed separator */}
             <View style={styles.separator}>
               <View style={styles.holeLeft} />
-              <Text style={styles.dashes}>- - - - - - - - - - - - - - - - -</Text>
+              <View style={styles.dashLine} />
               <View style={styles.holeRight} />
             </View>
 
             {/* QR Code */}
             <View style={styles.qrWrap}>
-              <QRCode
-                value={ticket.qr_token}
-                size={width * 0.5}
-                color="#000000"
-                backgroundColor="#FFFFFF"
-              />
+              <View style={styles.qrInner}>
+                <QRCode
+                  value={ticket.qr_token}
+                  size={width * 0.45}
+                  color="#000000"
+                  backgroundColor="transparent"
+                />
+              </View>
               <Text style={styles.qrHint}>Scan at event entrance</Text>
             </View>
 
@@ -155,15 +173,12 @@ export default function DigitalTicketScreen() {
                 <Text style={styles.refValue}>₹{ticket.total_price.toLocaleString()}</Text>
               </View>
             </View>
-          </View>
-
-          {/* Ticket Bottom Tear */}
-          <View style={styles.tearBottom} />
+          </LinearGradient>
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity testID="download-btn" style={styles.actionBtn} onPress={() => {}}>
+          <TouchableOpacity testID="download-btn" style={styles.actionBtn} onPress={() => { }}>
             <Download size={18} color={COLORS.textPrimary} />
             <Text style={styles.actionBtnText}>Save to Wallet</Text>
           </TouchableOpacity>
@@ -173,11 +188,14 @@ export default function DigitalTicketScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: rs(40) }} />
       </ScrollView>
     </View>
   );
 }
+
+// Mocking rs for brevity if theme doesn't have it, but usually SPACING/COLORS are enough
+const rs = (v: number) => v;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
@@ -187,30 +205,31 @@ const styles = StyleSheet.create({
   headerBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
   headerTitle: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '700' },
   scroll: { padding: 20 },
-  ticketOuter: { borderRadius: RADIUS.xl, overflow: 'hidden', shadowColor: '#FFF', shadowOpacity: 0.08, shadowRadius: 30, elevation: 10 },
-  ticketCard: { backgroundColor: '#FFFFFF', padding: 24 },
-  tearBottom: { height: 16, backgroundColor: '#FFFFFF', borderBottomLeftRadius: RADIUS.xl, borderBottomRightRadius: RADIUS.xl },
-  ticketHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  logoRowSmall: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  logoCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  logoG: { color: '#FFF', fontSize: 13, fontWeight: '800' },
-  logoSmall: { color: '#000', fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
-  statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.full },
-  statusText: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  ticketEventTitle: { color: '#000', fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 16, lineHeight: 26 },
-  ticketDetails: { gap: 8, marginBottom: 20 },
-  ticketDetailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  ticketDetailText: { color: '#3F3F46', fontSize: 13, flex: 1, lineHeight: 20 },
-  separator: { flexDirection: 'row', alignItems: 'center', marginHorizontal: -24, marginBottom: 20, position: 'relative' },
-  holeLeft: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.bg, position: 'absolute', left: -10, zIndex: 2 },
-  holeRight: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.bg, position: 'absolute', right: -10, zIndex: 2 },
-  dashes: { color: '#E4E4E7', fontSize: 14, flex: 1, textAlign: 'center', letterSpacing: 2 },
-  qrWrap: { alignItems: 'center', gap: 12, marginBottom: 20 },
-  qrHint: { color: '#A1A1AA', fontSize: 12, letterSpacing: 0.5 },
-  refRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F4F4F5', borderRadius: RADIUS.md, padding: 12 },
+  ticketOuter: { borderRadius: RADIUS.xl, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
+  ticketCard: { padding: 24, minHeight: 480 },
+  watermarkContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', opacity: 0.04, transform: [{ rotate: '-45deg' }, { scale: 1.5 }] },
+  watermarkText: { color: '#000', fontSize: 32, fontWeight: '900', letterSpacing: 10, lineHeight: 60, flexWrap: 'nowrap' },
+  logoCircleDark: { backgroundColor: '#000', borderRadius: 100, padding: 2 },
+  ticketHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, zIndex: 10 },
+  logoRowSmall: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logoSmall: { color: '#111827', fontSize: 18, fontWeight: '900', letterSpacing: -0.5 },
+  statusChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.full, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
+  statusText: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  ticketEventTitle: { color: '#111827', fontSize: 24, fontWeight: '900', letterSpacing: -0.8, marginBottom: 16, lineHeight: 30, zIndex: 10 },
+  ticketDetails: { gap: 10, marginBottom: 24, zIndex: 10 },
+  ticketDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ticketDetailText: { color: '#374151', fontSize: 14, fontWeight: '600', flex: 1 },
+  separator: { flexDirection: 'row', alignItems: 'center', marginHorizontal: -24, marginBottom: 24, position: 'relative' },
+  holeLeft: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.bg, position: 'absolute', left: -12, zIndex: 2 },
+  holeRight: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.bg, position: 'absolute', right: -12, zIndex: 2 },
+  dashLine: { flex: 1, height: 1, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)', borderStyle: 'dashed' },
+  qrWrap: { alignItems: 'center', gap: 16, marginBottom: 24, zIndex: 10 },
+  qrInner: { padding: 16, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: RADIUS.lg, borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
+  qrHint: { color: '#4B5563', fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  refRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: RADIUS.lg, padding: 16, zIndex: 10 },
   refItem: { alignItems: 'center', gap: 4 },
-  refLabel: { color: '#A1A1AA', fontSize: 9, textTransform: 'uppercase', letterSpacing: 1 },
-  refValue: { color: '#000', fontSize: 12, fontWeight: '700' },
+  refLabel: { color: '#6B7280', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  refValue: { color: '#111827', fontSize: 13, fontWeight: '900' },
   actions: { flexDirection: 'row', gap: 12, marginTop: 20 },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard },
   actionBtnPrimary: { backgroundColor: COLORS.btnPrimary, borderColor: 'transparent' },

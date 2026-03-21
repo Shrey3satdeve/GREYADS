@@ -1,0 +1,7 @@
+{
+    "venvPath": "D:/GREYADS/backend",
+    "venv": ".venv",
+    "extraPaths": ["D:/GREYADS/backend"],
+    "typeCheckingMode": "basic",
+    "reportMissingImports": true
+}

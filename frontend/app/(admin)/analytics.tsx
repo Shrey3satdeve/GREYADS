@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TrendingUp, Ticket, Users, Calendar, Zap } from 'lucide-react-native';
 import { api } from '../../utils/api';
-import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { COLORS, RADIUS } from '../../constants/theme';
 
 interface Stats {
   total_events: number;
@@ -15,26 +15,30 @@ interface Stats {
 }
 
 const BAR_COLORS = ['#3B82F6', '#7C3AED', '#22C55E', '#F59E0B', '#EF4444'];
-const MOCK_WEEKLY = [22, 45, 31, 68, 42, 88, 54];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function AnalyticsScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [weekly, setWeekly] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await api.get('/admin/stats');
-      setStats(data);
-    } catch {}
+      const [statsData, weeklyData]: [any, any] = await Promise.all([
+        api.get('/admin/stats'),
+        api.get('/admin/weekly-stats')
+      ]);
+      setStats(statsData);
+      setWeekly(weeklyData.weekly);
+    } catch { }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
   const onRefresh = useCallback(() => { setRefreshing(true); load(); }, []);
 
-  const maxBar = Math.max(...MOCK_WEEKLY);
+  const maxBar = Math.max(...weekly, 1);
 
   return (
     <SafeAreaView style={styles.safe} testID="admin-analytics-screen">
@@ -73,7 +77,7 @@ export default function AnalyticsScreen() {
               <Text style={styles.chartTitle}>Weekly Ticket Sales</Text>
             </View>
             <View style={styles.barChart}>
-              {MOCK_WEEKLY.map((val, i) => (
+              {weekly.map((val, i) => (
                 <View key={i} style={styles.barCol}>
                   <Text style={styles.barVal}>{val}</Text>
                   <View style={styles.barOuter}>
@@ -88,13 +92,17 @@ export default function AnalyticsScreen() {
           {/* Category Breakdown */}
           <Text style={styles.sectionTitle}>Events by Category</Text>
           <View style={styles.categoryCard}>
-            {(stats?.recent_events || []).map((ev, i) => (
-              <View key={ev.id} style={styles.catRow}>
-                <View style={[styles.catBar, { backgroundColor: BAR_COLORS[i % BAR_COLORS.length] }]} />
-                <Text style={styles.catName} numberOfLines={1}>{ev.title}</Text>
-                <Text style={styles.catVal}>{ev.available_tickets} left</Text>
-              </View>
-            ))}
+            {(stats?.recent_events || []).length === 0 ? (
+              <Text style={styles.emptyText}>No events available yet.</Text>
+            ) : (
+              (stats?.recent_events || []).map((ev, i) => (
+                <View key={ev.id} style={styles.catRow}>
+                  <View style={[styles.catBar, { backgroundColor: BAR_COLORS[i % BAR_COLORS.length] }]} />
+                  <Text style={styles.catName} numberOfLines={1}>{ev.title}</Text>
+                  <Text style={styles.catVal}>{ev.available_tickets} left</Text>
+                </View>
+              ))
+            )}
           </View>
 
           {/* Summary Metrics */}
@@ -145,6 +153,7 @@ const styles = StyleSheet.create({
   catBar: { width: 4, height: 36, borderRadius: 2 },
   catName: { color: COLORS.textSecondary, fontSize: 13, flex: 1 },
   catVal: { color: COLORS.textTertiary, fontSize: 12 },
+  emptyText: { color: COLORS.textTertiary, fontSize: 13 },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
   metricCard: { flex: 1, minWidth: '45%', backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: 14, alignItems: 'center', gap: 6, borderWidth: 1 },
   metricVal: { color: COLORS.textPrimary, fontSize: 22, fontWeight: '800' },

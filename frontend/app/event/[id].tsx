@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, ActivityIndicator, Dimensions,
+  Image, ActivityIndicator, Dimensions, FlatList, Share, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Heart, MapPin, Calendar, Clock, Tag, Users, Share2 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../utils/api';
+import BrandMark from '../../components/BrandMark';
 import { COLORS, CATEGORY_COLORS, RADIUS, SPACING } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
@@ -19,6 +20,7 @@ interface EventDetail {
   date: string;
   venue: string;
   cover_image_url: string;
+  images?: string[];
   category: string;
   price: number;
   currency: string;
@@ -41,15 +43,37 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
+  const [activeImg, setActiveImg] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
     if (!id) return;
+    setLoading(true);
     api.get(`/events/${id}`)
       .then(data => setEvent(data.event))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleShare = async () => {
+    if (!event) return;
+    try {
+      await Share.share({
+        message: `Check out this event: ${event.title}\n\nVenue: ${event.venue}\nDate: ${formatDate(event.date)}\n\nDownload GreyAdz to book tickets!`,
+        url: 'https://greyadz.com/events/' + event.id, // Primary for iOS
+      });
+    } catch (error: any) {
+      Alert.alert('Share failed', error.message);
+    }
+  };
+
+  const toggleLike = () => {
+    setLiked(!liked);
+    // In a real app, this would also call Firestore to save the favorite
+    if (!liked) {
+      // Logic for adding to favorites
+    }
+  };
 
   if (loading) {
     return (
@@ -73,13 +97,39 @@ export default function EventDetailScreen() {
   const catColor = CATEGORY_COLORS[event.category] || '#FFF';
   const soldPct = Math.round(((event.total_tickets - event.available_tickets) / event.total_tickets) * 100);
 
+  const carouselData = (event.images && event.images.length > 0) ? event.images : [event.cover_image_url];
+
   return (
     <View style={styles.container} testID="event-detail-screen">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Hero Image */}
+        {/* Hero Carousel */}
         <View style={styles.hero}>
-          <Image source={{ uri: event.cover_image_url }} style={styles.heroImg} />
-          <LinearGradient colors={['rgba(0,0,0,0.3)', 'transparent', '#000000']} style={StyleSheet.absoluteFillObject} />
+          <FlatList
+            data={carouselData}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={(e) => {
+              const x = e.nativeEvent.contentOffset.x;
+              setActiveImg(Math.round(x / width));
+            }}
+            keyExtractor={(_, i) => i.toString()}
+            renderItem={({ item }) => (
+              <View style={{ width, height: 320 }}>
+                <Image source={{ uri: item }} style={styles.heroImg} />
+                <LinearGradient colors={['rgba(0,0,0,0.3)', 'transparent', '#000000']} style={StyleSheet.absoluteFillObject} />
+              </View>
+            )}
+          />
+
+          {/* Pagination Dots */}
+          {carouselData.length > 1 && (
+            <View style={styles.pagination}>
+              {carouselData.map((_, i) => (
+                <View key={i} style={[styles.dot, activeImg === i && styles.activeDot]} />
+              ))}
+            </View>
+          )}
 
           {/* Overlay Buttons */}
           <SafeAreaView edges={['top']} style={styles.heroOverlay}>
@@ -87,10 +137,10 @@ export default function EventDetailScreen() {
               <ArrowLeft size={20} color="#FFF" />
             </TouchableOpacity>
             <View style={styles.heroActions}>
-              <TouchableOpacity testID="share-btn" style={styles.circleBtn} onPress={() => {}}>
+              <TouchableOpacity testID="share-btn" style={styles.circleBtn} onPress={handleShare}>
                 <Share2 size={18} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity testID="like-btn" style={[styles.circleBtn, liked && { backgroundColor: '#EF4444' }]} onPress={() => setLiked(!liked)}>
+              <TouchableOpacity testID="like-btn" style={[styles.circleBtn, liked && { backgroundColor: '#EF4444' }]} onPress={toggleLike}>
                 <Heart size={18} color="#FFF" fill={liked ? '#FFF' : 'none'} />
               </TouchableOpacity>
             </View>
@@ -180,9 +230,7 @@ export default function EventDetailScreen() {
           {/* Organizer */}
           <Text style={styles.sectionTitle}>Organizer</Text>
           <View style={styles.organizer}>
-            <View style={styles.orgAvatar}>
-              <Text style={styles.orgAvatarText}>{event.organizer_name[0]}</Text>
-            </View>
+            <BrandMark size={36} imageScale={0.7} />
             <Text style={styles.orgName}>{event.organizer_name}</Text>
           </View>
         </View>
@@ -202,7 +250,7 @@ export default function EventDetailScreen() {
           disabled={event.available_tickets === 0}
         >
           <Text style={styles.bookBtnText}>
-            {event.available_tickets === 0 ? 'Sold Out' : 'Book Ticket'}
+            {event.available_tickets === 0 ? 'Sold Out' : 'Get Tickets'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -215,8 +263,11 @@ const styles = StyleSheet.create({
   loadWrap: { flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center', gap: 12 },
   errorText: { color: COLORS.textSecondary, fontSize: 16 },
   backBtn: { padding: 12, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md },
-  hero: { height: 320, width },
+  hero: { height: 320, width, position: 'relative' },
   heroImg: { width: '100%', height: '100%' },
+  pagination: { position: 'absolute', bottom: 20, flexDirection: 'row', width: '100%', justifyContent: 'center', gap: 6 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)' },
+  activeDot: { backgroundColor: '#FFF', width: 14 },
   heroOverlay: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16 },
   heroActions: { flexDirection: 'row', gap: 8 },
   circleBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },

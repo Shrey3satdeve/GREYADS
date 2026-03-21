@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, ScrollView } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ScanLine, Zap, CheckCircle, XCircle, Clock, LogOut } from 'lucide-react-native';
+import BrandMark from '../../components/BrandMark';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
@@ -18,14 +19,14 @@ export default function ScannerHomeScreen() {
 
   const loadStats = useCallback(async () => {
     try {
-      const data = await api.get('/scanner/history');
+      const data: any = await api.get('/scanner/history');
       const logs = data.logs || [];
       const today = new Date().toDateString();
       const todayLogs = logs.filter((l: any) => new Date(l.timestamp).toDateString() === today);
       setTodayScans(todayLogs.length);
       setSuccessCount(todayLogs.filter((l: any) => l.status === 'success').length);
       setFailCount(todayLogs.filter((l: any) => l.status !== 'success').length);
-    } catch {}
+    } catch { }
     finally { setRefreshing(false); }
   }, []);
 
@@ -41,9 +42,12 @@ export default function ScannerHomeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Scanner Mode</Text>
-            <Text style={styles.headerSub}>Staff: {user?.name}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <BrandMark size={32} imageScale={0.68} />
+            <View>
+              <Text style={styles.headerTitle}>Scanner Mode</Text>
+              <Text style={styles.headerSub}>Staff: {user?.name}</Text>
+            </View>
           </View>
           <TouchableOpacity testID="scanner-logout-btn" style={styles.logoutBtn} onPress={async () => { await logout(); router.replace('/onboarding'); }}>
             <LogOut size={18} color={COLORS.textSecondary} />
@@ -102,7 +106,7 @@ export default function ScannerHomeScreen() {
           </View>
           <View style={styles.infoRow}>
             <View style={styles.infoDot} />
-            <Text style={styles.infoText}>Point the camera at the attendee's QR code</Text>
+            <Text style={styles.infoText}>Point the camera at the attendee&apos;s QR code</Text>
           </View>
           <View style={styles.infoRow}>
             <View style={styles.infoDot} />

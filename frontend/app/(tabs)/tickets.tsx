@@ -23,6 +23,7 @@ interface TicketItem {
 function StatusBadge({ status }: { status: string }) {
   const config = {
     valid: { bg: '#22C55E20', text: '#22C55E', label: 'Valid' },
+    pending: { bg: '#F59E0B20', text: '#F59E0B', label: 'Pending' },
     used: { bg: '#3F3F4660', text: '#71717A', label: 'Used' },
     cancelled: { bg: '#EF444420', text: '#EF4444', label: 'Cancelled' },
   }[status] || { bg: '#27272A', text: '#A1A1AA', label: status };

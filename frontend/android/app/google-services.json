@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "420509611534",
+    "project_id": "greyadz-ff727",
+    "storage_bucket": "greyadz-ff727.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:420509611534:android:1f2b139e20cf4db77bee5f",
+        "android_client_info": {
+          "package_name": "com.greyadz.userapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "420509611534-9i1r10mluckmbcmf1d0844ibehcb7s4q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.greyadz.userapp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCsfJkq8iPKiRMPxDUCKaQA1cpc6BCxoNo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

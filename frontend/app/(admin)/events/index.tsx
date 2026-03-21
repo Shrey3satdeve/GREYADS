@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Alert,
+  RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Calendar, MapPin, Trash2, Users } from 'lucide-react-native';
+import { Plus, Calendar, MapPin, Trash2, Users, RotateCw } from 'lucide-react-native';
 import { api } from '../../../utils/api';
 import { COLORS, CATEGORY_COLORS, RADIUS, SPACING } from '../../../constants/theme';
+import { useDialog } from '../../../components/AppDialog';
 
 interface EventItem {
   id: string;
@@ -26,6 +27,7 @@ export default function AdminEventsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+  const { showDialog, DialogComponent } = useDialog();
 
   const loadEvents = useCallback(async () => {
     try {
@@ -39,17 +41,21 @@ export default function AdminEventsScreen() {
   const onRefresh = useCallback(() => { setRefreshing(true); loadEvents(); }, []);
 
   const deleteEvent = (id: string, title: string) => {
-    Alert.alert('Delete Event', `Delete "${title}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          try {
-            await api.delete(`/events/${id}`);
-            setEvents(ev => ev.filter(e => e.id !== id));
-          } catch { Alert.alert('Error', 'Failed to delete event'); }
-        }
-      },
-    ]);
+    showDialog({
+      title: 'Delete Event',
+      message: `Are you sure you want to delete "${title}"? This cannot be undone.`,
+      buttons: [
+        { label: 'Cancel', style: 'cancel' },
+        {
+          label: 'Delete', style: 'destructive', onPress: async () => {
+            try {
+              await api.delete(`/events/${id}`);
+              setEvents(ev => ev.filter(e => e.id !== id));
+            } catch { showDialog({ title: 'Error', message: 'Failed to delete event' }); }
+          }
+        },
+      ],
+    });
   };
 
   const renderEvent = ({ item }: { item: EventItem }) => {
@@ -76,8 +82,12 @@ export default function AdminEventsScreen() {
           <Text style={styles.metaText} numberOfLines={1}>{item.venue}</Text>
         </View>
 
-        {/* Capacity bar */}
-        <View style={styles.capacityRow}>
+        {/* Capacity bar - Clickable to view attendees */}
+        <TouchableOpacity 
+          style={styles.capacityRow}
+          onPress={() => router.push(`/(admin)/events/${item.id}/attendees` as any)}
+          activeOpacity={0.7}
+        >
           <View style={styles.progressBg}>
             <View style={[styles.progressFill, { width: `${soldPct}%`, backgroundColor: soldPct > 80 ? COLORS.error : '#22C55E' }]} />
           </View>
@@ -85,7 +95,7 @@ export default function AdminEventsScreen() {
             <Users size={10} color={COLORS.textTertiary} />
             <Text style={styles.capacityText}>{item.available_tickets}/{item.total_tickets}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity
           testID={`delete-event-${item.id}`}
@@ -105,13 +115,23 @@ export default function AdminEventsScreen() {
           <Text style={styles.headerTitle}>Events</Text>
           <Text style={styles.headerSub}>{events.length} total</Text>
         </View>
-        <TouchableOpacity
-          testID="create-event-fab"
-          style={styles.fab}
-          onPress={() => router.push('/(admin)/events/create')}
-        >
-          <Plus size={20} color="#000" strokeWidth={2.5} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity 
+            testID="admin-refresh-events-btn"
+            style={[styles.fab, { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.border }]}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <RotateCw size={20} color={refreshing ? COLORS.textTertiary : COLORS.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="create-event-fab"
+            style={styles.fab}
+            onPress={() => router.push('/(admin)/events/create')}
+          >
+            <Plus size={20} color="#000" strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -135,6 +155,7 @@ export default function AdminEventsScreen() {
           }
         />
       )}
+      {DialogComponent}
     </SafeAreaView>
   );
 }

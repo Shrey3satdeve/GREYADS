@@ -1,54 +1,174 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, Ticket, Calendar, Tag, CheckCircle } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { Bell, Calendar, CheckCircle, Info, Tag, Ticket } from 'lucide-react-native';
+import { api } from '../../utils/api';
+import { COLORS, RADIUS } from '../../constants/theme';
 
-const NOTIFS = [
-  { id: '1', type: 'ticket', title: 'Booking Confirmed!', body: 'Your ticket for Neon Dreams Music Festival is ready.', time: '2 mins ago', read: false, icon: Ticket, accent: '#22C55E' },
-  { id: '2', type: 'event', title: 'Event Tomorrow', body: 'Tech Summit 2026 starts tomorrow at 9:00 AM. Don\'t be late!', time: '1 hr ago', read: false, icon: Calendar, accent: '#3B82F6' },
-  { id: '3', type: 'promo', title: 'Early Bird Offer 🎉', body: 'Get 20% off on Street Food Carnival tickets. Limited seats!', time: '2 hrs ago', read: true, icon: Tag, accent: '#F59E0B' },
-  { id: '4', type: 'ticket', title: 'Ticket Scanned', body: 'Your ticket was successfully scanned at the event gate.', time: '1 day ago', read: true, icon: CheckCircle, accent: '#22C55E' },
-  { id: '5', type: 'event', title: 'New Event Added', body: 'Midnight Rave has been added. Book early for the best price!', time: '2 days ago', read: true, icon: Bell, accent: '#7C3AED' },
-];
+interface Notif {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  created_at: string;
+  read: boolean;
+}
+
+const getIcon = (type: string) => {
+  switch (type) {
+    case 'ticket':
+      return Ticket;
+    case 'event':
+      return Calendar;
+    case 'promo':
+      return Tag;
+    case 'scan':
+      return CheckCircle;
+    default:
+      return Info;
+  }
+};
+
+const getAccent = (type: string) => {
+  switch (type) {
+    case 'ticket':
+      return '#22C55E';
+    case 'event':
+      return '#3B82F6';
+    case 'promo':
+      return '#F59E0B';
+    case 'scan':
+      return '#22C55E';
+    default:
+      return '#7C3AED';
+  }
+};
 
 export default function NotificationsScreen() {
-  const unread = NOTIFS.filter(n => !n.read).length;
+  const [notifications, setNotifications] = useState<Notif[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const data = await api.get('/notifications/my');
+      const nextNotifications = (data.notifications || []).map((notification: any) => ({
+        id: notification.id,
+        type: notification.type,
+        title: notification.title,
+        body: notification.message,
+        created_at: notification.created_at,
+        read: notification.is_read,
+      }));
+      setNotifications(nextNotifications);
+    } catch (err) {
+      console.error('Notifications load error:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifications();
+    }, [loadNotifications]),
+  );
+
+  const markAsRead = async (id: string) => {
+    const target = notifications.find((notification) => notification.id === id);
+    if (!target || target.read) {
+      return;
+    }
+
+    try {
+      await api.patch(`/notifications/${id}/read`);
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === id ? { ...notification, read: true } : notification,
+        ),
+      );
+    } catch (err) {
+      console.error('Mark notification as read error:', err);
+    }
+  };
+
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
 
   return (
-    <SafeAreaView style={styles.safe} testID="notifications-screen">
+    <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Bell size={22} color={COLORS.textPrimary} />
         <Text style={styles.headerTitle}>Notifications</Text>
-        {unread > 0 && (
+        {unreadCount > 0 && (
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{unread}</Text>
+            <Text style={styles.badgeText}>{unreadCount}</Text>
           </View>
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {NOTIFS.map((n) => (
-          <TouchableOpacity
-            key={n.id}
-            testID={`notification-${n.id}`}
-            style={[styles.notifCard, !n.read && styles.notifUnread]}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.notifIcon, { backgroundColor: n.accent + '15' }]}>
-              <n.icon size={20} color={n.accent} strokeWidth={1.8} />
+      {loading ? (
+        <View style={styles.loadWrap}>
+          <ActivityIndicator color="#FFF" />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadNotifications(); }} tintColor="#FFF" />}
+        >
+          {notifications.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Bell size={48} color={COLORS.textTertiary} strokeWidth={1} />
+              <Text style={styles.emptyTitle}>No Notifications</Text>
+              <Text style={styles.emptyText}>You&apos;ll see booking and event updates here.</Text>
             </View>
-            <View style={{ flex: 1, gap: 3 }}>
-              <View style={styles.notifHeader}>
-                <Text style={styles.notifTitle}>{n.title}</Text>
-                {!n.read && <View style={[styles.dot, { backgroundColor: n.accent }]} />}
-              </View>
-              <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text>
-              <Text style={styles.notifTime}>{n.time}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-        <View style={{ height: 110 }} />
-      </ScrollView>
+          ) : (
+            notifications.map((notification) => {
+              const Icon = getIcon(notification.type);
+              const accent = getAccent(notification.type);
+              const createdAt = notification.created_at ? new Date(notification.created_at) : null;
+              const timeStr = createdAt
+                ? createdAt.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                : 'Just now';
+
+              return (
+                <TouchableOpacity
+                  key={notification.id}
+                  testID={`notification-${notification.id}`}
+                  style={[styles.notifCard, !notification.read && styles.notifUnread]}
+                  activeOpacity={0.8}
+                  onPress={() => markAsRead(notification.id)}
+                >
+                  <View style={[styles.notifIcon, { backgroundColor: accent + '15' }]}>
+                    <Icon size={20} color={accent} strokeWidth={1.8} />
+                  </View>
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <View style={styles.notifHeader}>
+                      <Text style={styles.notifTitle}>{notification.title}</Text>
+                      {!notification.read && <View style={[styles.dot, { backgroundColor: accent }]} />}
+                    </View>
+                    <Text style={styles.notifBody} numberOfLines={2}>
+                      {notification.body}
+                    </Text>
+                    <Text style={styles.notifTime}>{timeStr}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+          <View style={{ height: 110 }} />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -68,4 +188,8 @@ const styles = StyleSheet.create({
   notifBody: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19 },
   notifTime: { color: COLORS.textTertiary, fontSize: 11 },
   dot: { width: 8, height: 8, borderRadius: 4 },
+  loadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 180, paddingBottom: 100, gap: 12 },
+  emptyTitle: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '700' },
+  emptyText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
 });

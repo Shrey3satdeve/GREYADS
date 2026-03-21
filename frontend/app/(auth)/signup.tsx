@@ -1,14 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Eye, EyeOff, ArrowLeft, ArrowRight, Megaphone } from 'lucide-react-native';
+import { Eye, EyeOff, ArrowLeft, ArrowRight } from 'lucide-react-native';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import BrandMark from '../../components/BrandMark';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth } from '../../utils/firebase';
+import { useDialog } from '../../components/AppDialog';
+import { createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID, // MUST be a Web Client ID, not an Android Client ID, to get idToken
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // Only needed if you add iOS later
+});
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
@@ -17,26 +29,96 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
+  const { login } = useAuth();
+  const { showDialog, DialogComponent } = useDialog();
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      
+      // Try silent sign-in first for "direct" login experience
+      let response;
+      try {
+        response = await GoogleSignin.signInSilently();
+      } catch (e) {
+        // If silent fails, do regular sign-in
+        response = await GoogleSignin.signIn();
+      }
+      
+      if (response.type === 'cancelled') {
+        throw { code: 'SIGN_IN_CANCELLED' };
+      }
+
+      const idToken = response.data?.idToken;
+      
+      let credentialToken = idToken;
+      if (!credentialToken) {
+        const tokens = await GoogleSignin.getTokens();
+        credentialToken = tokens.idToken;
+      }
+      
+      if (!credentialToken) {
+        throw new Error("No idToken found after sign-in");
+      }
+      
+      const credential = GoogleAuthProvider.credential(credentialToken);
+      const userCreds = await signInWithCredential(auth, credential);
+      const fbIdToken = await userCreds.user.getIdToken(true);
+      
+      await AsyncStorage.setItem('greyads_token', fbIdToken);
+      
+      const data = await api.get('/auth/me');
+      await login(fbIdToken, data.user);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      console.log('Google Sign-In Error:', err);
+      if (err.code !== 'SIGN_IN_CANCELLED') {
+         showDialog({ title: 'Google Sign-In Failed', message: err.message || 'Could not sign in with Google' });
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSignup = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Missing Fields', 'Please fill in all required fields.');
+      showDialog({ title: 'Missing Fields', message: 'Please fill in all required fields.' });
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+      showDialog({ title: 'Weak Password', message: 'Password must be at least 6 characters.' });
       return;
     }
     setLoading(true);
     try {
-      // Seed data first if not done
-      await api.post('/seed', {}, false).catch(() => {});
-      const data = await api.post('/auth/register', { name: name.trim(), email: email.trim().toLowerCase(), password, phone }, false);
-      await login(data.token, data.user);
+      const userCreds = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      await updateProfile(userCreds.user, { displayName: name.trim() });
+      const idToken = await userCreds.user.getIdToken(true);
+      
+      await AsyncStorage.setItem('greyads_token', idToken);
+
+      const payload: any = { name: name.trim() };
+      if (phone.trim()) payload.phone = phone.trim();
+
+      // This triggers backend to generate the Firestore user document and updates it
+      const data = await api.patch('/auth/me', payload);
+      
+      await login(idToken, data.user);
+      router.replace('/(tabs)');
     } catch (err: any) {
-      Alert.alert('Signup Failed', err.message || 'Something went wrong');
+      console.error(err);
+      let errorMsg = err.message || 'Something went wrong';
+      if (err.code === 'auth/email-already-in-use') {
+        errorMsg = 'An account with this email already exists.';
+      } else if (err.code === 'auth/weak-password') {
+        errorMsg = 'The password is too weak.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMsg = 'Invalid email address.';
+      }
+      showDialog({ title: 'Signup Failed', message: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -44,6 +126,7 @@ export default function SignupScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      {DialogComponent}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {/* Header */}
@@ -51,11 +134,12 @@ export default function SignupScreen() {
             <TouchableOpacity testID="back-btn" onPress={() => router.back()} style={styles.backBtn}>
               <ArrowLeft size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
-            <View style={styles.logoRow}>
-              <View style={styles.iconRing}>
-                <Megaphone size={20} color="#FFF" strokeWidth={2} />
-              </View>
-              <Text style={styles.logoText}>Grey<Text style={{ color: '#A1A1AA' }}>Adz</Text>.</Text>
+            <View style={{ flex: 1, alignItems: 'center', marginRight: 40 }}>
+              <Image 
+                source={require('../../assets/images/greyadz-logo-v3.png')}
+                style={{ width: 140, height: 140, marginTop: -10 }}
+                contentFit="contain"
+              />
             </View>
           </View>
 
@@ -68,7 +152,7 @@ export default function SignupScreen() {
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="Alex Johnson"
+            placeholder="e.g. Rahul Sharma"
             placeholderTextColor={COLORS.textTertiary}
             autoCapitalize="words"
           />
@@ -79,7 +163,7 @@ export default function SignupScreen() {
             style={styles.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="your@email.com"
+            placeholder="e.g. rahul@example.com"
             placeholderTextColor={COLORS.textTertiary}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -92,7 +176,7 @@ export default function SignupScreen() {
             style={styles.input}
             value={phone}
             onChangeText={setPhone}
-            placeholder="+91 98765 43210"
+            placeholder="e.g. 9876543210"
             placeholderTextColor={COLORS.textTertiary}
             keyboardType="phone-pad"
           />
@@ -104,7 +188,7 @@ export default function SignupScreen() {
               style={[styles.input, { flex: 1, marginBottom: 0 }]}
               value={password}
               onChangeText={setPassword}
-              placeholder="Min. 6 characters"
+              placeholder="Enter a strong password"
               placeholderTextColor={COLORS.textTertiary}
               secureTextEntry={!showPw}
             />
@@ -128,6 +212,32 @@ export default function SignupScreen() {
             )}
           </TouchableOpacity>
 
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+            <TouchableOpacity
+              style={[styles.googleBtn, googleLoading && { opacity: 0.4 }]}
+              onPress={handleGoogleSignIn}
+              disabled={googleLoading}
+              activeOpacity={0.85}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <Image 
+                    source="https://www.gstatic.com/images/branding/product/2x/googleg_48dp.png"
+                    style={styles.googleIcon} 
+                    contentFit="contain"
+                  />
+                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
           <TouchableOpacity testID="go-to-login-btn" onPress={() => router.back()} style={styles.linkRow}>
             <Text style={styles.linkText}>Already have an account? <Text style={styles.linkAccent}>Sign In</Text></Text>
           </TouchableOpacity>
@@ -143,7 +253,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: SPACING.xl },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconRing: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
   logoText: { fontSize: 20, fontWeight: '800', color: '#FFF', letterSpacing: -0.5 },
   heading: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '800', letterSpacing: -0.5, marginBottom: 6 },
   subheading: { color: COLORS.textSecondary, fontSize: 15, marginBottom: SPACING.lg },
@@ -163,4 +272,10 @@ const styles = StyleSheet.create({
   linkRow: { alignItems: 'center', paddingVertical: 16 },
   linkText: { color: COLORS.textSecondary, fontSize: 14 },
   linkAccent: { color: COLORS.textPrimary, fontWeight: '700' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
+  dividerText: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
+  googleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.full, paddingVertical: 17, borderWidth: 1, borderColor: COLORS.border },
+  googleIcon: { width: 22, height: 22 },
+  googleBtnText: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
 });

@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Image,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, ChevronDown, CheckCircle, Camera, Image as ImageIcon } from 'lucide-react-native';
+import { X, ChevronDown, CheckCircle, Camera, Image as ImageIcon, MapPin, Calendar, Clock } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../../utils/api';
+import { storage } from '../../../utils/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { COLORS, RADIUS, SPACING, CATEGORIES, COVER_IMAGES, CATEGORY_COLORS } from '../../../constants/theme';
 import { rw, rh, rf, rs, SCREEN_W } from '../../../utils/responsive';
+import { useDialog } from '../../../components/AppDialog';
 
 export default function CreateEventScreen() {
   const [form, setForm] = useState({
@@ -22,57 +25,66 @@ export default function CreateEventScreen() {
     total_tickets: '',
     organizer_name: 'GreyAdz Events',
     tags: '',
+    is_recommended: false,
   });
-  const [posterUri, setPosterUri] = useState<string | null>(null);
+  const [venueSuggestions, setVenueSuggestions] = useState<any[]>([]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [posterUris, setPosterUris] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(false);
   const [showCatPicker, setShowCatPicker] = useState(false);
   const router = useRouter();
+  const { showDialog, DialogComponent } = useDialog();
 
-  const set = (key: string, value: string) => setForm(f => ({ ...f, [key]: value }));
+  const set = (key: string, value: any) => setForm(f => ({ ...f, [key]: value }));
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow access to your photo library to upload a poster.');
+      showDialog({ title: 'Permission Needed', message: 'Allow access to your photo library to upload a poster.' });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.7,
-      base64: true,
+      allowsMultipleSelection: true,
+      allowsEditing: false,
+      quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      const b64 = `data:image/jpeg;base64,${asset.base64}`;
-      setPosterUri(b64);
+    if (!result.canceled && result.assets) {
+      const newUris = result.assets.map(asset => asset.uri);
+      setPosterUris(prev => [...prev, ...newUris]);
     }
   };
 
   const takePicture = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow camera access to take a photo.');
+      showDialog({ title: 'Permission Needed', message: 'Allow camera access to take a photo.' });
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [16, 9],
-      quality: 0.7,
-      base64: true,
+      quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      const b64 = `data:image/jpeg;base64,${asset.base64}`;
-      setPosterUri(b64);
+      setPosterUris(prev => [...prev, result.assets[0].uri]);
     }
+  };
+
+  const uploadImage = async (uri: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const filename = `events/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+    const storageRef = ref(storage, filename);
+    await uploadBytes(storageRef, blob);
+    return await getDownloadURL(storageRef);
   };
 
   const handleCreate = async () => {
     if (!form.title || !form.description || !form.venue || !form.price || !form.total_tickets) {
-      Alert.alert('Missing Fields', 'Please fill all required fields.');
+      showDialog({ title: 'Missing Fields', message: 'Please fill all required fields.' });
       return;
     }
     setLoading(true);
@@ -88,15 +100,27 @@ export default function CreateEventScreen() {
         organizer_name: form.organizer_name,
         tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
       };
-      if (posterUri) {
-        payload.cover_image_data = posterUri;
-      } else {
-        payload.cover_image_url = COVER_IMAGES[form.category] || COVER_IMAGES.Music;
+      if (posterUris.length > 0) {
+        setLoading(true); // Ensure loading is still on
+        // Upload all images to Firebase Storage if they aren't already remote URLs
+        const uploadPromises = posterUris.map(uri => 
+          (uri.startsWith('https://') || uri.startsWith('http://')) 
+            ? Promise.resolve(uri) 
+            : uploadImage(uri)
+        );
+        const imageUrls = await Promise.all(uploadPromises);
+        payload.cover_image_url = imageUrls[0];
+        payload.images = imageUrls;
       }
+ else {
+        payload.cover_image_url = COVER_IMAGES[form.category] || COVER_IMAGES.Music;
+        payload.images = [payload.cover_image_url];
+      }
+      payload.is_recommended = form.is_recommended;
       await api.post('/events', payload);
       setCreated(true);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create event');
+      showDialog({ title: 'Error', message: err.message || 'Failed to create event' });
     } finally {
       setLoading(false);
     }
@@ -110,10 +134,10 @@ export default function CreateEventScreen() {
         </View>
         <Text style={styles.successTitle}>Event Created!</Text>
         <Text style={styles.successSub}>Your event is now live on the platform</Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/(admin)/events/')}>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/(admin)/events')}>
           <Text style={styles.primaryBtnText}>View All Events</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.ghostBtn} onPress={() => { setCreated(false); setPosterUri(null); setForm(f => ({ ...f, title: '', description: '', venue: '', price: '', total_tickets: '', tags: '' })); }}>
+        <TouchableOpacity style={styles.ghostBtn} onPress={() => { setCreated(false); setPosterUris([]); setForm(f => ({ ...f, title: '', description: '', venue: '', price: '', total_tickets: '', tags: '' })); }}>
           <Text style={styles.ghostBtnText}>Create Another</Text>
         </TouchableOpacity>
       </View>
@@ -135,28 +159,44 @@ export default function CreateEventScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
           {/* Poster Upload */}
-          <Text style={styles.label}>Event Poster</Text>
-          <View style={styles.posterWrap}>
-            {posterUri ? (
-              <View style={styles.posterPreview}>
-                <Image source={{ uri: posterUri }} style={styles.posterImg} resizeMode="cover" />
-                <TouchableOpacity style={styles.changePosterBtn} onPress={() => setPosterUri(null)}>
-                  <X size={14} color="#FFF" />
-                  <Text style={styles.changePosterText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.posterBtns}>
-                <TouchableOpacity style={styles.posterBtn} onPress={pickImage}>
-                  <ImageIcon size={rf(22)} color="#7C3AED" />
-                  <Text style={styles.posterBtnText}>Gallery</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.posterBtn} onPress={takePicture}>
-                  <Camera size={rf(22)} color="#3B82F6" />
-                  <Text style={styles.posterBtnText}>Camera</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Event Images ({posterUris.length})</Text>
+            {posterUris.length > 0 && (
+              <TouchableOpacity onPress={() => setPosterUris([])}>
+                <Text style={styles.clearText}>Clear All</Text>
+              </TouchableOpacity>
             )}
+          </View>
+
+          <View style={styles.posterSection}>
+            {posterUris.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewScroll} contentContainerStyle={{ gap: rs(10), paddingRight: 20 }}>
+                {posterUris.map((uri, idx) => (
+                  <View key={idx} style={styles.posterPreview}>
+                    <Image source={{ uri }} style={styles.posterImg} resizeMode="cover" />
+                    <TouchableOpacity style={styles.removeImageBtn} onPress={() => setPosterUris(prev => prev.filter((_, i) => i !== idx))}>
+                      <X size={12} color="#FFF" />
+                    </TouchableOpacity>
+                    {idx === 0 && (
+                      <View style={styles.coverBadge}>
+                        <Text style={styles.coverBadgeText}>Cover</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.posterBtns}>
+              <TouchableOpacity style={styles.posterBtn} onPress={pickImage}>
+                <ImageIcon size={rf(20)} color="#7C3AED" />
+                <Text style={styles.posterBtnText}>Add Photos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.posterBtn} onPress={takePicture}>
+                <Camera size={rf(20)} color="#3B82F6" />
+                <Text style={styles.posterBtnText}>Take Photo</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Title */}
@@ -185,13 +225,83 @@ export default function CreateEventScreen() {
             </View>
           )}
 
-          {/* Venue */}
+          {/* Venue & Location Suggestions */}
           <Text style={styles.label}>Venue *</Text>
-          <TextInput testID="input-venue" style={styles.input} value={form.venue} onChangeText={v => set('venue', v)} placeholder="e.g. MMRDA Grounds, Mumbai" placeholderTextColor={COLORS.textTertiary} />
+          <View style={styles.venueContainer}>
+            <TextInput 
+              testID="input-venue" 
+              style={styles.input} 
+              value={form.venue} 
+              onChangeText={v => {
+                set('venue', v);
+                if (v.length > 2) {
+                  // Fetch location suggestions (Nominatim API)
+                  fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(v)}&limit=5`)
+                    .then(res => res.json())
+                    .then(data => setVenueSuggestions(data))
+                    .catch(() => {});
+                } else {
+                  setVenueSuggestions([]);
+                }
+              }} 
+              placeholder="e.g. MMRDA Grounds, Mumbai" 
+              placeholderTextColor={COLORS.textTertiary} 
+            />
+            {venueSuggestions.length > 0 && (
+              <View style={styles.suggestionsList}>
+                {venueSuggestions.map((item, idx) => (
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={styles.suggestionItem} 
+                    onPress={() => {
+                      set('venue', item.display_name);
+                      setVenueSuggestions([]);
+                    }}
+                  >
+                    <MapPin size={14} color={COLORS.textSecondary} />
+                    <Text style={styles.suggestionText} numberOfLines={1}>{item.display_name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
 
-          {/* Date */}
+          {/* Date & Time * Modern Pickers */}
           <Text style={styles.label}>Date & Time *</Text>
-          <TextInput testID="input-date" style={styles.input} value={form.date} onChangeText={v => set('date', v)} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={COLORS.textTertiary} />
+          <View style={styles.row}>
+            <TouchableOpacity 
+              style={[styles.input, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Calendar size={18} color={COLORS.textSecondary} />
+              <Text style={{ color: form.date ? COLORS.textPrimary : COLORS.textTertiary }}>
+                {form.date ? new Date(form.date).toLocaleDateString() : 'Select Date'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.input, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Clock size={18} color={COLORS.textSecondary} />
+              <Text style={{ color: form.date ? COLORS.textPrimary : COLORS.textTertiary }}>
+                {form.date ? new Date(form.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Select Time'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Recommendation Panel Toggle */}
+          <View style={styles.recommendRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Show in Recommendation Panel</Text>
+              <Text style={styles.recommendSub}>Feautured on the community home screen</Text>
+            </View>
+            <TouchableOpacity 
+              style={[styles.toggleBase, form.is_recommended && styles.toggleActive]}
+              onPress={() => set('is_recommended', !form.is_recommended)}
+            >
+              <View style={[styles.toggleCircle, form.is_recommended && styles.toggleCircleActive]} />
+            </TouchableOpacity>
+          </View>
 
           {/* Price + Tickets */}
           <View style={styles.row}>
@@ -225,6 +335,53 @@ export default function CreateEventScreen() {
           <View style={{ height: rs(110) }} />
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      {/* Date Picker Modal */}
+      <Modal visible={showDatePicker} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modernPicker}>
+            <Text style={styles.modalTitle}>Select Date</Text>
+            <Calendar size={48} color={COLORS.textTertiary} strokeWidth={1} />
+            {/* Simple date picker for demo - in production use @react-native-community/datetimepicker */}
+            <TextInput 
+              style={styles.modalInput} 
+              placeholder="YYYY-MM-DD" 
+              placeholderTextColor={COLORS.textTertiary}
+              onChangeText={v => {
+                const parts = (form.date || '').split('T');
+                set('date', `${v}T${parts[1] || '12:00'}`);
+              }}
+            />
+            <TouchableOpacity style={styles.doneBtn} onPress={() => setShowDatePicker(false)}>
+              <Text style={styles.doneBtnText}>Confirm Date</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Time Picker Modal */}
+      <Modal visible={showTimePicker} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modernPicker}>
+            <Text style={styles.modalTitle}>Select Time</Text>
+            <Clock size={48} color={COLORS.textTertiary} strokeWidth={1} />
+            <TextInput 
+              style={styles.modalInput} 
+              placeholder="HH:MM" 
+              placeholderTextColor={COLORS.textTertiary}
+              onChangeText={v => {
+                const parts = (form.date || '').split('T');
+                set('date', `${parts[0] || '2026-03-25'}T${v}`);
+              }}
+            />
+            <TouchableOpacity style={styles.doneBtn} onPress={() => setShowTimePicker(false)}>
+              <Text style={styles.doneBtnText}>Confirm Time</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {DialogComponent}
     </SafeAreaView>
   );
 }
@@ -245,14 +402,18 @@ const styles = StyleSheet.create({
   dropdownItem: { flexDirection: 'row', alignItems: 'center', gap: rs(8), padding: rs(12), borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
   dropdownText: { color: COLORS.textSecondary, fontSize: rf(14) },
   row: { flexDirection: 'row', gap: rs(10) },
-  posterWrap: { marginBottom: rs(8) },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: rs(6), marginTop: rs(4) },
+  clearText: { color: COLORS.error, fontSize: rf(11), fontWeight: '600' },
+  posterSection: { marginBottom: rs(12) },
+  previewScroll: { marginBottom: rs(12) },
   posterBtns: { flexDirection: 'row', gap: rs(10) },
-  posterBtn: { flex: 1, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed', paddingVertical: rs(20), alignItems: 'center', gap: rs(6) },
+  posterBtn: { flex: 1, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed', paddingVertical: rs(16), alignItems: 'center', gap: rs(4) },
   posterBtnText: { color: COLORS.textSecondary, fontSize: rf(12), fontWeight: '600' },
-  posterPreview: { position: 'relative', borderRadius: RADIUS.md, overflow: 'hidden' },
-  posterImg: { width: '100%', height: rh(160), borderRadius: RADIUS.md },
-  changePosterBtn: { position: 'absolute', top: rs(8), right: rs(8), flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: RADIUS.full, paddingHorizontal: rs(10), paddingVertical: rs(5) },
-  changePosterText: { color: '#FFF', fontSize: rf(11), fontWeight: '600' },
+  posterPreview: { position: 'relative', width: rs(120), height: rh(80), borderRadius: RADIUS.md, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
+  posterImg: { width: '100%', height: '100%', borderRadius: RADIUS.md },
+  removeImageBtn: { position: 'absolute', top: rs(4), right: rs(4), width: 22, height: 22, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  coverBadge: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(124, 58, 237, 0.9)', paddingVertical: 2, alignItems: 'center' },
+  coverBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
   submitBtn: { backgroundColor: COLORS.btnPrimary, borderRadius: RADIUS.full, paddingVertical: rs(15), alignItems: 'center', marginTop: rs(12) },
   submitBtnText: { color: COLORS.btnPrimaryText, fontSize: rf(16), fontWeight: '700' },
   successWrap: { flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center', padding: rs(32), gap: rs(12) },
@@ -263,4 +424,20 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#000', fontSize: rf(16), fontWeight: '700' },
   ghostBtn: { paddingVertical: rs(12) },
   ghostBtnText: { color: COLORS.textSecondary, fontSize: rf(14) },
+  venueContainer: { position: 'relative', zIndex: 10 },
+  suggestionsList: { position: 'absolute', top: rs(48), left: 0, right: 0, backgroundColor: COLORS.bgCard2, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, elevation: 10, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, zIndex: 100 },
+  suggestionItem: { flexDirection: 'row', alignItems: 'center', gap: rs(10), padding: rs(14), borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
+  suggestionText: { color: COLORS.textSecondary, fontSize: rf(13) },
+  recommendRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, padding: rs(16), borderWidth: 1, borderColor: COLORS.border, marginTop: rs(10), marginBottom: rs(12) },
+  recommendSub: { color: COLORS.textTertiary, fontSize: rf(11), marginTop: 2 },
+  toggleBase: { width: rs(44), height: rs(24), borderRadius: rs(12), backgroundColor: COLORS.bgTertiary, padding: 2, borderWidth: 1, borderColor: COLORS.border },
+  toggleActive: { backgroundColor: '#7C3AED80', borderColor: '#7C3AED' },
+  toggleCircle: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: COLORS.textSecondary },
+  toggleCircleActive: { transform: [{ translateX: rs(20) }], backgroundColor: '#7C3AED' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: rs(20) },
+  modernPicker: { width: '100%', backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: rs(24), alignItems: 'center', gap: rs(20), borderWidth: 1, borderColor: COLORS.border },
+  modalTitle: { color: COLORS.textPrimary, fontSize: rf(18), fontWeight: '800' },
+  modalInput: { width: '100%', backgroundColor: COLORS.bgTertiary, borderRadius: RADIUS.md, padding: rs(14), color: COLORS.textPrimary, fontSize: rf(16), textAlign: 'center', borderWidth: 1, borderColor: COLORS.border },
+  doneBtn: { backgroundColor: COLORS.btnPrimary, borderRadius: RADIUS.full, paddingHorizontal: rs(32), paddingVertical: rs(14), width: '100%', alignItems: 'center' },
+  doneBtnText: { color: '#000', fontSize: rf(16), fontWeight: '700' },
 });

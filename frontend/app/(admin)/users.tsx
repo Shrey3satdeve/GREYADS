@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Users, Crown, Shield, User } from 'lucide-react-native';
+import { Users, Crown, Shield, User, LogOut, RotateCw } from 'lucide-react-native';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { useDialog } from '../../components/AppDialog';
 
 interface UserItem {
   id: string;
@@ -24,17 +26,76 @@ export default function UsersScreen() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { showDialog, DialogComponent } = useDialog();
 
   const loadUsers = useCallback(async () => {
     try {
-      const data = await api.get('/admin/users');
+      const data: any = await api.get('/admin/users');
       setUsers(data.users || []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => { loadUsers(); }, []);
-  const onRefresh = useCallback(() => { setRefreshing(true); loadUsers(); }, []);
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadUsers();
+  }, [loadUsers]);
+
+  const handleRevokeStaff = async (userId: string, userName: string) => {
+    showDialog({
+      title: 'Revoke Access',
+      message: `Are you sure you want to sign out and revoke access for staff "${userName}"? \n\nAdmin biometric verification is required to proceed.`,
+      buttons: [
+        { label: 'Cancel', style: 'cancel' },
+        { 
+          label: 'Verify & Revoke', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const hasHardware = await LocalAuthentication.hasHardwareAsync();
+              const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+              
+              if (!hasHardware || !isEnrolled) {
+                showDialog({ 
+                  title: 'Security Notice', 
+                  message: 'Biometric hardware is not available or no identity is enrolled. Please ensure Fingerprint/FaceID is set up.' 
+                });
+                return;
+              }
+
+              const result = await LocalAuthentication.authenticateAsync({
+                promptMessage: 'Confirm Admin Identity',
+                fallbackLabel: 'Use Passcode',
+                disableDeviceFallback: false,
+              });
+
+              if (result.success) {
+                setLoading(true);
+                await api.post('/admin/revoke-user', { user_id: userId });
+                showDialog({ title: 'Access Revoked ✅', message: `Staff member ${userName} has been successfully signed out and demoted.` });
+                loadUsers();
+              }
+            } catch (err: any) {
+              showDialog({ title: 'Error', message: err.message || 'Verification failed' });
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    });
+  };
+
+  const [activeTab, setActiveTab] = useState<'all' | 'user' | 'staff'>('all');
+
+  const filteredUsers = users.filter(u => {
+    if (activeTab === 'all') return true;
+    return u.role === activeTab;
+  });
 
   const roleCounts = users.reduce((acc, u) => {
     acc[u.role] = (acc[u.role] || 0) + 1;
@@ -57,6 +118,16 @@ export default function UsersScreen() {
           <roleConf.icon size={10} color={roleConf.color} />
           <Text style={[styles.roleText, { color: roleConf.color }]}>{roleConf.label}</Text>
         </View>
+
+        {item.role === 'staff' && (
+          <TouchableOpacity 
+            testID={`revoke-staff-${item.id}`}
+            style={styles.revokeBtn} 
+            onPress={() => handleRevokeStaff(item.id, item.name)}
+          >
+            <LogOut size={16} color={COLORS.error} />
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -65,18 +136,39 @@ export default function UsersScreen() {
     <SafeAreaView style={styles.safe} testID="admin-users-screen">
       <View style={styles.header}>
         <Users size={22} color={COLORS.textPrimary} />
-        <Text style={styles.headerTitle}>Users</Text>
-        <Text style={styles.headerCount}>{users.length}</Text>
+        <Text style={styles.headerTitle}>User Management</Text>
+        <TouchableOpacity 
+          testID="admin-refresh-users-btn"
+          style={{ padding: 8 }}
+          onPress={onRefresh}
+          disabled={refreshing}
+        >
+          <RotateCw size={18} color={refreshing ? COLORS.textTertiary : COLORS.textSecondary} />
+        </TouchableOpacity>
+        <Text style={styles.headerCount}>{filteredUsers.length}</Text>
       </View>
 
-      {/* Summary Cards */}
+      {/* Summary / Filter Cards */}
       <View style={styles.summaryRow}>
-        {Object.entries(ROLE_CONFIG).map(([role, conf]) => (
-          <View key={role} style={[styles.summaryCard, { borderColor: conf.color + '30' }]}>
-            <conf.icon size={16} color={conf.color} strokeWidth={1.8} />
+        <TouchableOpacity 
+          onPress={() => setActiveTab('all')}
+          style={[styles.summaryCard, activeTab === 'all' && { borderColor: COLORS.textPrimary }]}
+        >
+          <Users size={16} color={activeTab === 'all' ? COLORS.textPrimary : COLORS.textTertiary} />
+          <Text style={[styles.summaryCount, { color: COLORS.textPrimary }]}>{users.length}</Text>
+          <Text style={styles.summaryLabel}>Total</Text>
+        </TouchableOpacity>
+
+        {Object.entries(ROLE_CONFIG).filter(([r]) => r !== 'admin').map(([role, conf]) => (
+          <TouchableOpacity 
+            key={role} 
+            onPress={() => setActiveTab(role as any)}
+            style={[styles.summaryCard, activeTab === role && { borderColor: conf.color }]}
+          >
+            <conf.icon size={16} color={activeTab === role ? conf.color : COLORS.textTertiary} strokeWidth={1.8} />
             <Text style={[styles.summaryCount, { color: conf.color }]}>{roleCounts[role] || 0}</Text>
             <Text style={styles.summaryLabel}>{conf.label}s</Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -84,15 +176,21 @@ export default function UsersScreen() {
         <View style={styles.loadWrap}><ActivityIndicator color="#FFF" /></View>
       ) : (
         <FlatList
-          data={users}
+          data={filteredUsers}
           keyExtractor={item => item.id}
           renderItem={renderUser}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FFF" />}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyText}>No {activeTab === 'all' ? 'users' : activeTab}s found</Text>
+            </View>
+          )}
         />
       )}
+      {DialogComponent}
     </SafeAreaView>
   );
 }
@@ -116,5 +214,8 @@ const styles = StyleSheet.create({
   userPhone: { color: COLORS.textTertiary, fontSize: 11 },
   roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.full },
   roleText: { fontSize: 10, fontWeight: '700' },
+  revokeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#EF444415', alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
   separator: { height: 0.5, backgroundColor: COLORS.border },
+  emptyWrap: { padding: 40, alignItems: 'center' },
+  emptyText: { color: COLORS.textTertiary, fontSize: 14, fontWeight: '600' },
 });

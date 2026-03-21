@@ -37,3 +37,10 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Build Artifacts
+android/build/
+.metro-cache/
+**/*.apk
+**/*.aab
+*.log
