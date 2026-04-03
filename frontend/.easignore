@@ -1,11 +1,15 @@
 node_modules/
 android/app/build/
+android/build/
+android/.gradle/
+android/node_modules/
 ios/build/
 .expo/
 .metro-cache/
 dist/
 web-build/
 *.apk
+*.aab
 *.log
 *.txt
 *.png
@@ -17,3 +21,7 @@ emulator_status*.png
 android-view*.xml
 playwright-report/
 test-results/
+preview/
+.vscode/
+yarn.lock.backup
+GreyAdz-*.apk

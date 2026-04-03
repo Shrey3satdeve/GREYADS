@@ -2,9 +2,9 @@
   "expo": {
     "name": "GreyAdz",
     "slug": "GreyAdz",
-    "version": "1.0.13",
+    "version": "1.0.35",
     "orientation": "portrait",
-    "icon": "./assets/images/greyadz-logo-v3.png",
+    "icon": "./assets/images/splash_logo.png",
     "scheme": "greyadz-payment",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,9 +17,9 @@
       }
     },
     "android": {
-      "versionCode": 14,
+      "versionCode": 36,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/greyadz-logo-v3.png",
+        "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#000000"
       },
       "package": "com.greyadz.userapp",
@@ -53,7 +53,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/greyadz-logo-v3.png",
+          "image": "./assets/images/splash_logo.png",
           "imageWidth": 260,
           "resizeMode": "contain",
           "backgroundColor": "#000000"
@@ -67,8 +67,8 @@
           }
         }
       ],
-      "expo-web-browser",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "@react-native-firebase/messaging"
     ],
     "experiments": {
       "typedRoutes": true
