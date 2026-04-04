@@ -11,16 +11,14 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Modal,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { Image } from 'expo-image';
 import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowRight, Eye, EyeOff } from 'lucide-react-native';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword, signInWithPhoneNumber, RecaptchaVerifier } from 'firebase/auth';
+import rnfbAuth, { sendPasswordResetEmail } from '@react-native-firebase/auth';
 import { auth } from '../../utils/firebase';
 import BrandMark from '../../components/BrandMark';
 import { useDialog } from '../../components/AppDialog';
@@ -36,20 +34,20 @@ GoogleSignin.configure({
 const { width } = Dimensions.get('window');
 const TABS = ['USER', 'STAFF', 'ADMIN'] as const;
 const ENABLE_DEMO_LOGIN = process.env.EXPO_PUBLIC_ENABLE_DEMO_LOGIN === '1';
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com';
-
-const FIREBASE_CONFIG = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCsfJkq8iPKiRMPxDUCKaQA1cpc6BCxoNo',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'greyadz-ff727.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'greyadz-ff727',
-};
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
 
 type RoleType = 'user' | 'staff' | 'admin';
 
-const DEMO_CREDENTIALS: Record<Exclude<RoleType, 'user'>, { email: string; password: string }> = {
-  admin: { email: 'admin@greyads.com', password: 'Admin@123' },
-  staff: { email: 'staff@greyads.com', password: 'Staff@123' },
+// Demo mode: only pre-fills the email address, never the password.
+// Credentials are never hardcoded in the bundle.
+const DEMO_EMAILS: Record<Exclude<RoleType, 'user'>, string> = {
+  admin: 'admin@greyads.com',
+  staff: 'staff@greyads.com',
 };
+
+// Client-side rate limiting — 5 failures triggers a 30-second lockout.
+const MAX_ATTEMPTS  = 5;
+const LOCKOUT_MS    = 30_000;
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -60,8 +58,18 @@ export default function LoginScreen() {
   const [selectedRole, setSelectedRole] = useState<RoleType>('user');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
-  const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [recaptchaVisible, setRecaptchaVisible] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpBanner, setOtpBanner] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [loginLocked, setLoginLocked] = useState(false);
+  const [lockCountdown, setLockCountdown] = useState(0);
+  const failedAttemptsRef = useRef(0);
+  const lockTimerRef      = useRef<any>(null);
+  const lockIntervalRef   = useRef<any>(null);
+  const confirmationResult = useRef<any>(null);
+  const otpTimeout = useRef<any>(null);
+  const otpInputRef = useRef<TextInput>(null);
+  const resendInterval = useRef<any>(null);
   const router = useRouter();
   const { login } = useAuth();
   const { showDialog, DialogComponent } = useDialog();
@@ -79,8 +87,8 @@ export default function LoginScreen() {
       const idToken = responseData?.idToken;
       if (!idToken) throw new Error("No ID Token found");
 
-      const credential = GoogleAuthProvider.credential(idToken);
-      const userCreds = await signInWithCredential(auth, credential);
+      const credential = rnfbAuth.GoogleAuthProvider.credential(idToken);
+      const userCreds = await rnfbAuth().signInWithCredential(credential);
       const fbIdToken = await userCreds.user.getIdToken(true);
 
       const data: any = await api.post('/auth/google', { access_token: fbIdToken, role: selectedRole });
@@ -102,67 +110,94 @@ export default function LoginScreen() {
     }
   };
 
-  const handleSendOTP = async () => {
-    let formattedPhone = phoneNumber.trim();
-    if (!formattedPhone) {
+  // -------------------------------------------------------
+  // Phone OTP — uses @react-native-firebase/auth natively.
+  // Android handles attestation via Play Integrity;
+  // no reCAPTCHA or WebView required.
+  // -------------------------------------------------------
+  const startResendCountdown = () => {
+    setResendCooldown(60);
+    if (resendInterval.current) clearInterval(resendInterval.current);
+    resendInterval.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(resendInterval.current);
+          resendInterval.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendOTP = async (isResend = false) => {
+    const cleaned = phoneNumber.replace(/\D/g, '');
+    if (!cleaned) {
       showDialog({ title: 'Missing Field', message: 'Please enter your phone number.' });
       return;
     }
-    
-    // Clean any non-digit chars
-    const cleaned = formattedPhone.replace(/\D/g, '');
-    
-    // We already have +91 in the UI label, so we keep the state as 10 digits.
-    // The prefixing for Firebase will happen inside the WebView now.
-
     if (cleaned.length !== 10) {
-       showDialog({ title: 'Invalid Format', message: 'Please enter a 10-digit number.' });
-       return;
+      showDialog({ title: 'Invalid Format', message: 'Please enter a 10-digit number.' });
+      return;
     }
 
+    setLoading(true);
+    setOtpBanner('');
+    if (isResend) setOtp('');
     await AsyncStorage.setItem('pending_role', selectedRole);
-    setRecaptchaVisible(true);
-  };
 
-
-  const onRecaptchaVerify = async (data: string) => {
-    try {
-      const msg = JSON.parse(data);
-      if (msg.type === 'VERIFICATION_ID') {
-        setRecaptchaVisible(false);
-        setVerificationId(msg.id);
-        showDialog({ title: 'OTP Sent ✅', message: 'Please check your messages for the verification code.' });
-      } else if (msg.type === 'AUTH_SUCCESS') {
-        const { idToken } = msg;
-        const res: any = await api.post('/auth/login', { access_token: idToken, role: selectedRole });
-        await login(idToken, res.user);
-        
-        if (res.user.role === 'admin') router.replace('/(admin)');
-        else if (res.user.role === 'staff') router.replace('/(scanner)');
-        else router.replace('/(tabs)');
-      } else if (msg.type === 'DEBUG') {
-        console.log('[WebView Auth Debug]:', msg.msg);
-      } else if (msg.type === 'ERROR') {
-        throw new Error(msg.error);
-      }
-    } catch (err: any) {
-      setRecaptchaVisible(false);
-      showDialog({ title: 'Error', message: err.message || 'Verification failed' });
-    } finally {
+    // 30-second guard so the button never freezes forever
+    otpTimeout.current = setTimeout(() => {
       setLoading(false);
+      showDialog({ title: 'Timeout', message: 'OTP request timed out. Please check your connection and try again.' });
+    }, 30000);
+
+    try {
+      const result = await rnfbAuth().signInWithPhoneNumber('+91' + cleaned);
+      clearTimeout(otpTimeout.current!);
+      otpTimeout.current = null;
+      confirmationResult.current = result;
+      // Flip to OTP screen immediately — no dialog to dismiss
+      setOtpSent(true);
+      setLoading(false);
+      setOtpBanner(`OTP sent to +91 xxxxxxxx${cleaned.slice(-2)} ✓`);
+      startResendCountdown();
+      // Auto-focus OTP input quickly
+      setTimeout(() => { otpInputRef.current?.focus(); }, 100);
+    } catch (err: any) {
+      clearTimeout(otpTimeout.current!);
+      otpTimeout.current = null;
+      setLoading(false);
+      showDialog({ title: 'Failed to Send OTP', message: err.message || 'Please try again.' });
     }
   };
-
-  const webViewRef = useRef<WebView>(null);
 
   const handleVerifyOTP = async () => {
     if (!otp.trim()) {
       showDialog({ title: 'Missing Field', message: 'Please enter the OTP.' });
       return;
     }
+    if (!confirmationResult.current) {
+      showDialog({ title: 'Session Expired', message: 'Please request a new OTP.' });
+      return;
+    }
     setLoading(true);
-    // Send the OTP to the WebView to confirm
-    webViewRef.current?.postMessage(JSON.stringify({ type: 'CONFIRM_OTP', otp }));
+    try {
+      // Confirm with native SDK
+      const result = await confirmationResult.current.confirm(otp);
+      
+      // Get an ID token from the native auth result
+      const idToken = await result?.user?.getIdToken();
+      if (!idToken) throw new Error("Could not retrieve authentication token.");
+      const res: any = await api.post('/auth/login', { access_token: idToken, role: selectedRole });
+      await login(idToken, res.user);
+    } catch (err: any) {
+      setLoading(false);
+      const msg = err.code === 'auth/invalid-verification-code'
+        ? 'Incorrect OTP. Please check and try again.'
+        : (err.message || 'Verification failed. Please try again.');
+      showDialog({ title: 'Invalid OTP', message: msg });
+    }
   };
 
 
@@ -171,11 +206,12 @@ export default function LoginScreen() {
   const horizontalPadding = 32;
   const pillPadding = 8;
   const availableWidth = width - (horizontalPadding * 2) - pillPadding;
-  const buttonWidth = availableWidth / 3;
+  const buttonWidth = availableWidth / TABS.length;
 
   useEffect(() => {
     let toValue = 0;
     if (selectedRole === 'staff') toValue = 1;
+    if (selectedRole === 'admin') toValue = 2;
     if (selectedRole === 'admin') toValue = 2;
 
     Animated.timing(slideAnim, {
@@ -185,30 +221,70 @@ export default function LoginScreen() {
     }).start();
   }, [selectedRole, slideAnim]);
 
-  const fillDemoCredentials = (role: Exclude<RoleType, 'user'>) => {
-    const creds = DEMO_CREDENTIALS[role];
-    setSelectedRole(role);
-    setEmail(creds.email);
-    setPassword(creds.password);
+  // Rate limiter — called after each failed email/password attempt
+  const recordFailedAttempt = () => {
+    failedAttemptsRef.current += 1;
+    if (failedAttemptsRef.current >= MAX_ATTEMPTS) {
+      setLoginLocked(true);
+      setLockCountdown(LOCKOUT_MS / 1000);
+      if (lockIntervalRef.current) clearInterval(lockIntervalRef.current);
+      lockIntervalRef.current = setInterval(() => {
+        setLockCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(lockIntervalRef.current);
+            setLoginLocked(false);
+            failedAttemptsRef.current = 0;
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
   };
 
-  const handleForgotPassword = () => {
-    if (!email.trim()) {
-      showDialog({ title: 'Email Required', message: 'Please enter your email address to reset your password.' });
+  // Demo mode: pre-fills only the email, never the password
+  const fillDemoCredentials = (role: Exclude<RoleType, 'user'>) => {
+    setSelectedRole(role);
+    setEmail(DEMO_EMAILS[role]);
+    setPassword(''); // Never pre-fill passwords
+  };
+
+  const handleForgotPassword = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      showDialog({ title: 'Email Required', message: 'Enter your email address above, then tap Forgot Password.' });
       return;
     }
-
-    showDialog({
-      title: 'Password Reset',
-      message: selectedRole === 'staff'
-        ? 'Please contact your administrator to reset your temporary password.'
-        : 'Password reset email delivery is not configured yet.',
-    });
+    setLoading(true);
+    try {
+      // Firebase sends a time-limited reset link (expires in 1 hour)
+      await sendPasswordResetEmail(rnfbAuth(), trimmedEmail);
+      showDialog({
+        title: 'Reset Email Sent',
+        // Deliberately vague — do not confirm whether the email exists.
+        message: 'If an account exists for that email, a password reset link has been sent. Check your inbox (and spam folder).',
+      });
+    } catch (err: any) {
+      // Same generic message regardless of error — prevents email enumeration.
+      showDialog({
+        title: 'Reset Email Sent',
+        message: 'If an account exists for that email, a password reset link has been sent.',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
 
 
   const handleLogin = async () => {
+    if (loginLocked) {
+      showDialog({
+        title: 'Too Many Attempts',
+        message: `Too many failed login attempts. Please wait ${lockCountdown} seconds and try again.`,
+      });
+      return;
+    }
     if (!email.trim() || !password.trim()) {
       showDialog({ title: 'Missing Fields', message: 'Please enter your email and password.' });
       return;
@@ -216,24 +292,42 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // Store the desired role so AuthContext can provision it correctly
-      await AsyncStorage.setItem('pending_role', selectedRole);
-      
-      // Sign in to Firebase first
-      const userCreds = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-      const fbIdToken = await userCreds.user.getIdToken(true);
-
-      const data: any = await api.post(
-        '/auth/login',
-        {
-          email: email.trim().toLowerCase(),
-          password,
-          role: selectedRole,
-        }
+      const userCreds = await rnfbAuth().signInWithEmailAndPassword(
+        email.trim().toLowerCase(),
+        password
       );
 
+      // Enforce email verification for email/password accounts
+      if (!userCreds.user.emailVerified) {
+        await rnfbAuth().signOut();
+        showDialog({
+          title: 'Email Not Verified',
+          message: 'Please verify your email address before logging in. Check your inbox for a verification link or request a new one.',
+          buttons: [
+            {
+              label: 'Resend Email',
+              style: 'default',
+              onPress: async () => {
+                try {
+                  await userCreds.user.sendEmailVerification();
+                  showDialog({ title: 'Sent', message: 'Verification email resent. Check your inbox.' });
+                } catch { /* ignore */ }
+              },
+            },
+          ],
+        });
+        return;
+      }
 
-      await login(data.token, data.user);
+      const fbIdToken = await userCreds.user.getIdToken(true);
+      const data: any = await api.post('/auth/login', {
+        email: email.trim().toLowerCase(),
+        role: selectedRole,
+      });
+
+      // Successful login — reset failure counter
+      failedAttemptsRef.current = 0;
+      await login(fbIdToken, data.user);
 
       if (data.user.role === 'admin') {
         router.replace('/(admin)');
@@ -243,10 +337,19 @@ export default function LoginScreen() {
         router.replace('/(tabs)');
       }
     } catch (err: any) {
-      if (err.code === 'auth/invalid-credential') {
-        showDialog({ title: 'Login Failed', message: 'Invalid email or password.\n\nAdmins: Please create admin@greyads.com in the Firebase Console.' });
+      recordFailedAttempt();
+      const remaining = MAX_ATTEMPTS - failedAttemptsRef.current;
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        showDialog({
+          title: 'Login Failed',
+          message: remaining > 0
+            ? `Invalid email or password. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
+            : 'Account temporarily locked due to repeated failures.',
+        });
+      } else if (err.code === 'auth/too-many-requests') {
+        showDialog({ title: 'Blocked by Firebase', message: 'Too many requests. Please wait a few minutes before trying again.' });
       } else {
-        showDialog({ title: 'Login Failed', message: err.message || 'Invalid credentials' });
+        showDialog({ title: 'Login Failed', message: err.message || 'Something went wrong.' });
       }
     } finally {
       setLoading(false);
@@ -366,7 +469,7 @@ export default function LoginScreen() {
 
             {(selectedRole === 'user') ? (
               <>
-                {!verificationId ? (
+                {!otpSent ? (
                   <View style={styles.field}>
                     <Text style={styles.label}>PHONE NUMBER</Text>
                     <View style={styles.phoneInputContainer}>
@@ -386,7 +489,7 @@ export default function LoginScreen() {
                     </View>
                     <TouchableOpacity
                       style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
-                      onPress={handleSendOTP}
+                      onPress={() => { handleSendOTP(); }}
                       disabled={loading}
                     >
                       {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>SEND OTP</Text>}
@@ -395,14 +498,27 @@ export default function LoginScreen() {
 
                 ) : (
                   <View style={styles.field}>
+                    {!!otpBanner && (
+                      <View style={styles.otpBanner}>
+                        <Text style={styles.otpBannerText}>{otpBanner}</Text>
+                      </View>
+                    )}
                     <Text style={styles.label}>ENTER OTP</Text>
                     <TextInput
+                      ref={otpInputRef}
                       style={styles.input}
                       value={otp}
-                      onChangeText={setOtp}
+                      onChangeText={(val) => {
+                        const cleaned = val.replace(/\D/g, '').slice(0, 6);
+                        setOtp(cleaned);
+                        if (cleaned.length === 6) {
+                          handleVerifyOTP();
+                        }
+                      }}
                       placeholder="6-digit code"
                       placeholderTextColor="#3F3F46"
                       keyboardType="number-pad"
+                      maxLength={6}
                     />
                     <TouchableOpacity
                       style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
@@ -411,9 +527,26 @@ export default function LoginScreen() {
                     >
                       {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>VERIFY OTP</Text>}
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setVerificationId(null)} style={{ marginTop: 10 }}>
-                      <Text style={{ color: '#71717A', textAlign: 'center', fontSize: 13 }}>Resend to a different number?</Text>
-                    </TouchableOpacity>
+                    <View style={styles.resendRow}>
+                      {resendCooldown > 0 ? (
+                        <Text style={styles.resendTimer}>Resend in {resendCooldown}s</Text>
+                      ) : (
+                        <TouchableOpacity onPress={() => { handleSendOTP(true); }} disabled={loading}>
+                          <Text style={styles.resendLink}>Resend OTP</Text>
+                        </TouchableOpacity>
+                      )}
+                      <Text style={styles.resendSep}> · </Text>
+                      <TouchableOpacity onPress={() => {
+                        setOtpSent(false);
+                        confirmationResult.current = null;
+                        setOtp('');
+                        setOtpBanner('');
+                        if (resendInterval.current) clearInterval(resendInterval.current);
+                        setResendCooldown(0);
+                      }}>
+                        <Text style={styles.resendLink}>Change number</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
               </>
@@ -445,6 +578,7 @@ export default function LoginScreen() {
                       Fill Staff Credits
                     </Text>
                   </TouchableOpacity>
+
                 </View>
               </View>
             )}
@@ -492,103 +626,6 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {recaptchaVisible && (
-        <View style={{ height: 1, width: 1, opacity: 0.01, position: 'absolute', top: -100, left: -100 }}>
-          <WebView
-            ref={webViewRef}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            thirdPartyCookiesEnabled={true}
-            sharedCookiesEnabled={true}
-            allowFileAccessFromFileURLs={true}
-            allowUniversalAccessFromFileURLs={true}
-            source={{
-                html: `
-                <html>
-                  <head>
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-                    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-                  </head>
-                  <body style="margin: 0; background-color: transparent;">
-                    <div id="recaptcha-container" style="display: flex; justify-content: center; align-items: center; height: 100vh;"></div>
-                    
-                    <script>
-                      const firebaseConfig = {
-                        apiKey: "${FIREBASE_CONFIG.apiKey}",
-                        authDomain: "${FIREBASE_CONFIG.authDomain}",
-                        projectId: "${FIREBASE_CONFIG.projectId}",
-                        appId: "${process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:420509611534:android:1f2b139e20cf4db77bee5f'}",
-                      };
-                      firebase.initializeApp(firebaseConfig);
-                      
-                      let confirmationResult;
-
-                      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-                        'size': 'invisible'
-                      });
-
-                      const rawPhone = "${phoneNumber}".replace(/\s/g, '');
-                      const formattedPhone = (rawPhone.startsWith('+') ? rawPhone : '+91' + rawPhone);
-
-                      window.recaptchaVerifier.render().then(() => {
-                        window.ReactNativeWebView.postMessage(JSON.stringify({ 
-                          type: 'DEBUG', 
-                          msg: 'Verifier rendered. Sending OTP to +91' + rawPhone
-                        }));
-                        firebase.auth().signInWithPhoneNumber(formattedPhone, window.recaptchaVerifier)
-                          .then((result) => {
-                            confirmationResult = result;
-                            window.ReactNativeWebView.postMessage(JSON.stringify({ 
-                              type: 'VERIFICATION_ID', 
-                              id: result.verificationId 
-                            }));
-                          }).catch((error) => {
-                            window.ReactNativeWebView.postMessage(JSON.stringify({ 
-                              type: 'ERROR', 
-                              error: error.message + ' (Host: ' + window.location.hostname + ')'
-                            }));
-                          });
-                      }).catch(err => {
-                        window.ReactNativeWebView.postMessage(JSON.stringify({ 
-                          type: 'ERROR', 
-                          error: 'Recaptcha failed: ' + err.message 
-                        }));
-                      });
-
-                      window.addEventListener('message', (event) => {
-                        try {
-                          const msg = JSON.parse(event.data);
-                          if (msg.type === 'CONFIRM_OTP') {
-                            confirmationResult.confirm(msg.otp)
-                              .then((result) => {
-                                result.user.getIdToken().then(idToken => {
-                                  window.ReactNativeWebView.postMessage(JSON.stringify({ 
-                                    type: 'AUTH_SUCCESS', 
-                                    idToken 
-                                  }));
-                                });
-                              }).catch((error) => {
-                                window.ReactNativeWebView.postMessage(JSON.stringify({ 
-                                  type: 'ERROR', 
-                                  error: error.message 
-                                }));
-                              });
-                          }
-                        } catch (e) {}
-                      });
-                    </script>
-                  </body>
-                </html>
-                `,
-                baseUrl: `https://${FIREBASE_CONFIG.authDomain}`
-              }}
-              onMessage={(event) => onRecaptchaVerify(event.nativeEvent.data)}
-            />
-        </View>
-      )}
       {DialogComponent}
     </SafeAreaView>
   );
@@ -654,6 +691,12 @@ const styles = StyleSheet.create({
   roleTabTextActive: { color: '#000' },
   form: { gap: 20 },
   field: { gap: 8 },
+  otpBanner: { backgroundColor: '#052e16', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: '#166534' },
+  otpBannerText: { color: '#4ade80', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  resendRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  resendTimer: { color: '#52525B', fontSize: 13, fontWeight: '500' },
+  resendLink: { color: '#A1A1AA', fontSize: 13, fontWeight: '600' },
+  resendSep: { color: '#3F3F46', fontSize: 13 },
   label: { color: '#3F3F46', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
   input: { backgroundColor: '#0A0A0A', borderRadius: 16, padding: 16, color: '#FFF', fontSize: 15, borderWidth: 1, borderColor: '#18181B' },
   passwordWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0A0A0A', borderRadius: 16, borderWidth: 1, borderColor: '#18181B', overflow: 'hidden' },
@@ -706,6 +749,38 @@ const styles = StyleSheet.create({
   phoneNumberInput: {
     flex: 1,
     marginBottom: 0,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  recaptchaContainer: {
+    backgroundColor: '#0A0A0A',
+    borderRadius: 24,
+    height: 450,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#18181B',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#18181B',
+  },
+  modalTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  closeText: {
+    color: '#71717A',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

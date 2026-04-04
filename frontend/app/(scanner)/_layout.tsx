@@ -11,9 +11,8 @@ export default function ScannerLayout() {
         tabBarShowLabel: false,
       }}
     >
-      <Tabs.Screen name="index" options={{ tabBarIcon: ({ color }) => <ScanLine size={20} color={color} strokeWidth={2.1} /> }} />
-      <Tabs.Screen name="history" options={{ tabBarIcon: ({ color }) => <Clock size={20} color={color} strokeWidth={2.1} /> }} />
-      <Tabs.Screen name="scan" options={{ href: null }} />
+      <Tabs.Screen name="index" options={{ tabBarIcon: ({ color }) => <ScanLine size={18} color={color} strokeWidth={2.4} /> }} />
+      <Tabs.Screen name="history" options={{ tabBarIcon: ({ color }) => <Clock size={18} color={color} strokeWidth={2.4} /> }} />
     </Tabs>
   );
 }

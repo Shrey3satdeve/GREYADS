@@ -1,10 +1,13 @@
+import 'react-native-gesture-handler';
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import { View } from 'react-native';
+import '@react-native-firebase/functions';
+import messaging from '@react-native-firebase/messaging';
+import { Linking, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 function RootRedirect() {
@@ -13,6 +16,7 @@ function RootRedirect() {
   const segments = useSegments();
 
   useEffect(() => {
+    console.log('[RootLayout] Routing Check:', { token: !!token, segments, isLoading });
     if (isLoading) return;
     
     const inAuth = segments.some(s => s === '(auth)' || s === 'login' || s === 'signup');
@@ -25,19 +29,70 @@ function RootRedirect() {
     const inPublicBrowse = inPublicTabs || segments.some(s => s === 'event');
 
     if (!token) {
-      if (!inAuth && !inOnboarding && !inPublicBrowse && segments.length > 0) {
+      if ((segments as any).length === 0 || ((segments as any).length === 1 && (segments[0] as any) === 'index')) {
         router.replace('/onboarding');
       }
     } else {
-      if (user?.role === 'admin' && !inAdmin) {
+      const isAdmin = user?.role === 'admin';
+      const isStaff = user?.role === 'staff';
+      const isUser = user?.role === 'user';
+
+      if (isAdmin && !inAdmin) {
         router.replace('/(admin)' as any);
-      } else if (user?.role === 'staff' && !inScanner) {
+      } else if (isStaff && !inScanner) {
         router.replace('/(scanner)' as any);
-      } else if (user?.role === 'user' && (inAuth || inOnboarding || inAdmin || inScanner)) {
+      } else if (isUser && (inAuth || inOnboarding || inAdmin || inScanner)) {
         router.replace('/(tabs)' as any);
+      } else if (isStaff && inAdmin) {
+        // Strict guard: staff in admin section -> kick to scanner
+        router.replace('/(scanner)' as any);
+      } else if (isAdmin && inScanner) {
+        // Admin in scanner section -> kick to admin
+        router.replace('/(admin)' as any);
       }
     }
   }, [token, user, isLoading, segments]);
+
+  useEffect(() => {
+    // Handle foreground messages
+    const unsubscribe = messaging().onMessage(async remoteMessage => {
+      Alert.alert(
+        remoteMessage.notification?.title || 'New Notification',
+        remoteMessage.notification?.body || 'You have a new update in GreyAdz.'
+      );
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    // Handle deep links from Razorpay Android SDK (greyadz-payment:///)
+    // Razorpay triggers the app's scheme after payment; we intercept and redirect.
+    const handleDeepLink = ({ url }: { url: string }) => {
+      if (!url || !url.startsWith('greyadz-payment://')) return;
+      try {
+        const parsed = new URL(url);
+        const txnId = parsed.searchParams.get('txn_id') ||
+                      parsed.searchParams.get('razorpay_payment_id');
+        if (txnId) {
+          router.replace(`/payment-result?txn_id=${txnId}` as any);
+        } else {
+          // bare greyadz-payment:/// with no payload → just go home
+          router.replace('/(tabs)' as any);
+        }
+      } catch {
+        router.replace('/(tabs)' as any);
+      }
+    };
+
+    // Handle case where app was opened from background via the deep link
+    Linking.getInitialURL().then(url => {
+      if (url) handleDeepLink({ url });
+    });
+
+    const sub = Linking.addEventListener('url', handleDeepLink);
+    return () => sub.remove();
+  }, [router]);
 
   return null;
 }

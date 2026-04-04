@@ -23,6 +23,7 @@ interface Stats {
   todays_scans: number;
   revenue_change_pct: number | null;
   recent_events: any[];
+  recent_broadcasts: any[];
 }
 
 function StatCard({ icon: Icon, label, value, color, sub }: any) {
@@ -52,16 +53,82 @@ export default function AdminDashboard() {
   const [bcMessage, setBcMessage] = useState('');
   const [bcLoading, setBcLoading] = useState(false);
 
-  const loadStats = useCallback(async () => {
-    try {
-      const data: any = await api.get('/admin/stats');
-      setStats(data);
-    } catch { }
-    finally { setLoading(false); setRefreshing(false); }
+  useEffect(() => {
+    setLoading(true);
+    
+    // Subscribe to events
+    const unsubEvents = api.subscribe('events', (events: any[]) => {
+      setStats(prev => ({
+        ...prev,
+        total_events: events.length,
+        recent_events: events.slice(0, 5),
+        total_users: prev?.total_users ?? 0,
+        total_tickets: prev?.total_tickets ?? 0,
+        total_revenue: prev?.total_revenue ?? 0,
+        todays_scans: prev?.todays_scans ?? 0,
+        revenue_change_pct: null,
+        recent_broadcasts: prev?.recent_broadcasts ?? []
+      }));
+      setLoading(false);
+    });
+
+    // Subscribe to users
+    const unsubUsers = api.subscribe('users', (users: any[]) => {
+      setStats(prev => ({
+        ...prev,
+        total_users: users.filter(u => u.role === 'user').length,
+        total_events: prev?.total_events ?? 0,
+        recent_events: prev?.recent_events ?? [],
+        total_tickets: prev?.total_tickets ?? 0,
+        total_revenue: prev?.total_revenue ?? 0,
+        todays_scans: prev?.todays_scans ?? 0,
+        revenue_change_pct: null,
+        recent_broadcasts: prev?.recent_broadcasts ?? []
+      }));
+    });
+
+    // Subscribe to tickets
+    const unsubTickets = api.subscribe('tickets', (tickets: any[]) => {
+      setStats(prev => ({
+        ...prev,
+        total_tickets: tickets.length,
+        total_revenue: tickets.reduce((acc: number, d: any) => acc + (d.total_price || 0), 0),
+        total_events: prev?.total_events ?? 0,
+        recent_events: prev?.recent_events ?? [],
+        total_users: prev?.total_users ?? 0,
+        todays_scans: prev?.todays_scans ?? 0,
+        revenue_change_pct: null,
+        recent_broadcasts: prev?.recent_broadcasts ?? []
+      }));
+    });
+
+    // Subscribe to broadcasts
+    const unsubBC = api.subscribe('broadcasts', (bcs: any[]) => {
+      setStats(prev => ({
+        ...prev,
+        recent_broadcasts: bcs.slice(0, 3),
+        total_events: prev?.total_events ?? 0,
+        recent_events: prev?.recent_events ?? [],
+        total_users: prev?.total_users ?? 0,
+        total_tickets: prev?.total_tickets ?? 0,
+        total_revenue: prev?.total_revenue ?? 0,
+        todays_scans: prev?.todays_scans ?? 0,
+        revenue_change_pct: null
+      }));
+    });
+
+    return () => {
+      unsubEvents();
+      unsubUsers();
+      unsubTickets();
+      unsubBC();
+    };
   }, []);
 
-  useEffect(() => { loadStats(); }, []);
-  const onRefresh = useCallback(() => { setRefreshing(true); loadStats(); }, []);
+  const onRefresh = useCallback(() => { 
+    setRefreshing(true); 
+    setTimeout(() => setRefreshing(false), 1000); 
+  }, []);
 
   const handleLogout = () => {
     showDialog({
@@ -104,7 +171,6 @@ export default function AdminDashboard() {
 
   return (
     <SafeAreaView style={styles.safe} testID="admin-dashboard-screen">
-      {DialogComponent}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Image 
@@ -216,6 +282,27 @@ export default function AdminDashboard() {
             </TouchableOpacity>
           </View>
 
+          {/* Recent Broadcasts */}
+          <Text style={styles.sectionTitle}>Sent Broadcasts</Text>
+          <View style={[styles.recentList, { marginBottom: 24 }]}>
+            {(stats?.recent_broadcasts || []).length === 0 ? (
+              <View style={styles.emptyRecent}>
+                <Text style={styles.emptyRecentText}>No broadcasts sent yet.</Text>
+              </View>
+            ) : (
+              (stats?.recent_broadcasts || []).map((bc) => (
+                <View key={bc.id} style={styles.recentRow}>
+                  <Send size={14} color="#7C3AED" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.recentTitleText} numberOfLines={1}>{bc.title}</Text>
+                    <Text style={styles.recentSub} numberOfLines={1}>{bc.message}</Text>
+                  </View>
+                  <Text style={styles.recentSeats}>{new Date(bc.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                </View>
+              ))
+            )}
+          </View>
+
           {/* Recent Events */}
           <Text style={styles.sectionTitle}>Recent Events</Text>
           <View style={styles.recentList}>
@@ -224,16 +311,23 @@ export default function AdminDashboard() {
                 <Text style={styles.emptyRecentText}>No live event data yet.</Text>
               </View>
             ) : (
-              (stats?.recent_events || []).map((event) => (
-                <View key={event.id} style={styles.recentRow}>
+             (stats?.recent_events || []).map((event) => (
+                <TouchableOpacity 
+                  key={event.id} 
+                  style={styles.recentRow}
+                  onPress={() => router.push(`/(admin)/events/${event.id}/analytics` as any)}
+                >
                   <View style={[styles.recentDot, { backgroundColor: '#3B82F6' }]} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.recentTitleText} numberOfLines={1}>{event.title}</Text>
                     <Text style={styles.recentSub}>{`Rs. ${event.price} · ${event.venue}`}</Text>
                   </View>
-                  <Text style={styles.recentSeats}>{event.available_tickets} left</Text>
-                </View>
-              ))
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <Text style={styles.recentSeats}>{event.available_tickets} left</Text>
+                    <ChevronRight size={12} color={COLORS.textTertiary} />
+                  </View>
+                </TouchableOpacity>
+            ))
             )}
           </View>
 
@@ -257,7 +351,6 @@ export default function AdminDashboard() {
                     onPress={async () => {
                       try {
                         await api.patch(`/events/${event.id}`, { is_recommended: false });
-                        loadStats();
                       } catch (err: any) {
                         showDialog({ title: 'Error', message: err.message });
                       }

@@ -27,6 +27,7 @@ export default function SplashScreen() {
   }, []);
 
   useEffect(() => {
+    console.log('[SplashScreen] Routing Check:', { token: !!token, role: user?.role, isLoading });
     if (isLoading) return;
     const timer = setTimeout(() => {
       if (!token) {
@@ -38,7 +39,7 @@ export default function SplashScreen() {
       } else {
         router.replace('/(tabs)');
       }
-    }, 100); // Reduced delay from 3000ms to 100ms
+    }, 0); // Redirect immediately but AuthContext will handle state
     return () => clearTimeout(timer);
   }, [isLoading, token, user]);
 

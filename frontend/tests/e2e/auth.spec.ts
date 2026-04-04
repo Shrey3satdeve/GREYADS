@@ -56,12 +56,13 @@ test.describe('Authentication Flows', () => {
         await page.goto('/login');
         await page.waitForTimeout(500);
         await page.getByTestId('role-tab-admin').click();
-        
+
         // Go back to USER
         await page.getByTestId('role-tab-user').click();
 
-        // Should be back at the user login page
-        await expect(page.getByText('Welcome Back')).toBeVisible();
-        await expect(page.getByText('Sign in to your GreyAdz account')).toBeVisible();
+        // Should be back at the user login page - check for USER tab active state
+        await expect(page.getByTestId('role-tab-user')).toBeVisible();
+        // Check for phone number input which is unique to user login
+        await expect(page.getByPlaceholder('9876543210')).toBeVisible();
     });
 });

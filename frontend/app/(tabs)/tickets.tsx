@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator,
@@ -7,6 +7,9 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ticket, Calendar, MapPin, QrCode, ArrowRight } from 'lucide-react-native';
 import { api } from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../components/AppDialog';
+import { rw, rh, rf, rs } from '../../utils/responsive';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 
 interface TicketItem {
@@ -40,17 +43,28 @@ export default function TicketsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+  const { showDialog } = useDialog();
 
   const loadTickets = useCallback(async () => {
     try {
       const data = await api.get('/tickets/my');
       setTickets(data.tickets || []);
-    } catch {}
-    finally { setLoading(false); setRefreshing(false); }
-  }, []);
+    } catch (err: any) {
+      console.error('Failed to load tickets:', err);
+      if (err.message?.includes('index')) {
+        showDialog({
+          title: 'Database Index Required',
+          message: 'The tickets query requires a Firestore index. Please check your Firebase console for the index creation link.',
+        });
+      }
+    } finally { 
+      setLoading(false); 
+      setRefreshing(false); 
+    }
+  }, [showDialog]);
 
-  useEffect(() => { loadTickets(); }, []);
-  const onRefresh = useCallback(() => { setRefreshing(true); loadTickets(); }, []);
+  useEffect(() => { loadTickets(); }, [loadTickets]);
+  const onRefresh = useCallback(() => { setRefreshing(true); loadTickets(); }, [loadTickets]);
 
   const renderTicket = ({ item }: { item: TicketItem }) => (
     <TouchableOpacity
@@ -103,7 +117,7 @@ export default function TicketsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safe} testID="tickets-screen">
+    <SafeAreaView style={styles.safe} testID="tickets-screen" edges={['top']}>
       <View style={styles.header}>
         <Ticket size={22} color={COLORS.textPrimary} />
         <Text style={styles.headerTitle}>My Tickets</Text>
@@ -119,6 +133,9 @@ export default function TicketsScreen() {
           <Ticket size={48} color={COLORS.textTertiary} strokeWidth={1} />
           <Text style={styles.emptyTitle}>No Tickets Yet</Text>
           <Text style={styles.emptySubtitle}>Book an event to see your tickets here</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
+            <Text style={styles.retryText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -142,14 +159,16 @@ const styles = StyleSheet.create({
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 },
   emptyTitle: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '700' },
-  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
+  emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: RADIUS.full, backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border },
+  retryText: { color: COLORS.textPrimary, fontWeight: '600' },
   list: { padding: 20, gap: 12, paddingBottom: 110 },
   ticketCard: {
     backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border,
     overflow: 'hidden',
   },
-  holeLeft: { position: 'absolute', left: -12, top: '58%', width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.bg, zIndex: 2 },
-  holeRight: { position: 'absolute', right: -12, top: '58%', width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.bg, zIndex: 2 },
+  holeLeft: { position: 'absolute', left: -12, top: '58%', width: rs(24), height: rs(24), borderRadius: 12, backgroundColor: COLORS.bg, zIndex: 2 },
+  holeRight: { position: 'absolute', right: -12, top: '58%', width: rs(24), height: rs(24), borderRadius: 12, backgroundColor: COLORS.bg, zIndex: 2 },
   dashedLine: { position: 'absolute', left: 16, right: 16, top: '58%', height: 1, borderWidth: 0.5, borderColor: COLORS.border, borderStyle: 'dashed' },
   ticketTop: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 32 },
   ticketTitle: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '700', marginBottom: 6, letterSpacing: -0.2 },
@@ -158,10 +177,10 @@ const styles = StyleSheet.create({
   ticketRight: { alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4 },
   ticketBottom: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingTop: 20 },
   refLabel: { color: COLORS.textTertiary, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 },
-  refValue: { color: COLORS.textPrimary, fontSize: 12, fontWeight: '700', fontFamily: 'Menlo' },
+  refValue: { color: COLORS.textPrimary, fontSize: 12, fontWeight: '700' },
   qtyLabel: { color: COLORS.textTertiary, fontSize: 11, marginBottom: 2 },
-  priceValue: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '800' },
-  viewBtn: { marginLeft: 'auto', width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.btnPrimary, alignItems: 'center', justifyContent: 'center' },
+  priceValue: { color: COLORS.textPrimary, fontSize: rs(15), fontWeight: '800' },
+  viewBtn: { marginLeft: 'auto', width: rs(32), height: rs(32), borderRadius: 16, backgroundColor: COLORS.textPrimary, alignItems: 'center', justifyContent: 'center' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.full, marginBottom: 8 },
   statusText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
 });

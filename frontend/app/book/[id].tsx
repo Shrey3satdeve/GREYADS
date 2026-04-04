@@ -8,6 +8,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,9 +18,12 @@ import { Calendar, CheckCircle, CreditCard, MapPin, Minus, Plus, Shield, X } fro
 import * as WebBrowser from 'expo-web-browser';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../utils/api';
-import { COLORS, RADIUS } from '../../constants/theme';
+import { COLORS, RADIUS, getEventImage } from '../../constants/theme';
 import { rf, rs } from '../../utils/responsive';
+import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../components/AppDialog';
+import RazorpayCheckout from 'react-native-razorpay';
+import { functions } from '../../utils/firebase';
 
 interface EventInfo {
   id: string;
@@ -26,6 +31,7 @@ interface EventInfo {
   date: string;
   venue: string;
   cover_image_url: string;
+  category: string;
   price: number;
   available_tickets: number;
 }
@@ -41,9 +47,35 @@ export default function BookTicketScreen() {
   const [paying, setPaying] = useState(false);
   const [booked, setBooked] = useState(false);
   const [ticketId, setTicketId] = useState('');
+  // removed redundant razorpayData and showRazorpay states
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const router = useRouter();
+  const { user } = useAuth();
   const { showDialog, DialogComponent } = useDialog();
+  const [guests, setGuests] = useState<Array<{ name: string, age: string }>>([{ name: user?.name || '', age: '' }]);
+
+  // Sync guests array with quantity
+  useEffect(() => {
+    setGuests(prev => {
+      const next = [...prev];
+      if (next.length < quantity) {
+        for (let i = next.length; i < quantity; i++) {
+          next.push({ name: '', age: '' });
+        }
+      } else if (next.length > quantity) {
+        return next.slice(0, quantity);
+      }
+      return next;
+    });
+  }, [quantity]);
+
+  const updateGuest = (index: number, field: 'name' | 'age', value: string) => {
+    const next = [...guests];
+    next[index] = { ...next[index], [field]: value };
+    setGuests(next);
+  };
+
+  const isFormValid = guests.every(g => g.name.trim().length > 2 && g.age.trim().length > 0);
 
   useEffect(() => {
     if (!id) return;
@@ -65,10 +97,10 @@ export default function BookTicketScreen() {
   }, [pulseAnim]);
 
   const handleManualBooking = async () => {
-    if (!event) return;
+    if (!event || !isFormValid) return;
     setBooking(true);
     try {
-      const data: any = await api.post('/tickets/book', { event_id: id, quantity });
+      const data: any = await api.post('/tickets/book', { event_id: id, quantity, guests });
       setTicketId(data.ticket.id);
       setBooked(true);
     } catch (err: any) {
@@ -112,34 +144,75 @@ export default function BookTicketScreen() {
     if (!event) return;
     setPaying(true);
     try {
-      const data: any = await api.post('/payments/initiate', {
+      const fn = functions.httpsCallable('initiatePayment');
+      const { data } = await fn({
+        amount: grand,
         event_id: id,
         quantity,
-        mobile: '9999999999',
-        amount: grand,
       });
 
-      // Construct the redirect URL for PhonePe Web Flow
-      // Note: Real production often requires a POST, but we'll try to use UAT/Prod URL with params if supported
-      const paymentUrl = data._is_real 
-        ? `${data.payment_url}?request=${data.base64_request}&checksum=${data.checksum}`
-        : data.payment_url;
+      console.log('[handlePayment] Order initiated:', data);
 
-      const result = await WebBrowser.openBrowserAsync(paymentUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-        showTitle: true,
-        enableBarCollapsing: false,
+      const options = {
+        description: `Booking for ${event.title}`,
+        image: 'https://i.imgur.com/3g7u6Wq.png',
+        currency: 'INR',
+        key: (data as any).key_id,
+        amount: (data as any).amount,
+        name: 'GreyAdz',
+        order_id: (data as any).order_id,
+        prefill: {
+          email: user?.email || '',
+          contact: '',
+          name: user?.name || '',
+        },
+        theme: { color: '#000000' }
+      };
+
+      console.log('[handlePayment] Opening Razorpay with options:', JSON.stringify(options, null, 2));
+
+      RazorpayCheckout.open(options).then(async (result: any) => {
+        console.log('[handlePayment] Razorpay SUCCESS:', result);
+        setPaying(true);
+        try {
+          const verifyFn = functions.httpsCallable('verifyPayment');
+          const res = await verifyFn({
+            razorpay_payment_id: result.razorpay_payment_id,
+            razorpay_order_id: result.razorpay_order_id,
+            razorpay_signature: result.razorpay_signature,
+            event_id: id,
+            quantity,
+            guests,
+          });
+
+          console.log('[handlePayment] Verification result:', res.data);
+
+          if ((res.data as any).success) {
+            router.push(`/ticket/${(res.data as any).ticket_id}`);
+          } else {
+            throw new Error('Verification failed');
+          }
+        } catch (error: any) {
+          console.error('[handlePayment] Verification ERROR:', error);
+          showDialog({ title: 'Verification Failed', message: error.message || 'Error creating ticket' });
+        } finally {
+          setPaying(false);
+        }
+      }).catch((error: any) => {
+        console.error('[handlePayment] Razorpay ERROR:', error);
+        showDialog({ 
+          title: 'Payment Failed', 
+          message: error.description || 'Payment was not completed' 
+        });
       });
-
-      if (result.type === 'cancel' || result.type === 'dismiss' || Platform.OS !== 'web') {
-        await pollPaymentStatus(data.txn_id);
-      }
     } catch (err: any) {
       showDialog({ title: 'Payment Error', message: err.message || 'Payment initiation failed' });
     } finally {
       setPaying(false);
     }
   };
+
+  // Removed onRazorpayMessage and razorpayHtml strings
 
   if (loading) {
     return (
@@ -188,7 +261,12 @@ export default function BookTicketScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {event && (
           <View style={styles.eventCard}>
-            <Image source={{ uri: event.cover_image_url }} style={styles.eventThumb} />
+            <Image
+              source={{ uri: getEventImage(event.cover_image_url, event.category, event.title) }}
+              style={styles.eventThumb}
+              contentFit="cover"
+              transition={200}
+            />
             <View style={styles.eventMeta}>
               <Text style={styles.eventName} numberOfLines={2}>{event.title}</Text>
               <View style={styles.metaRow}>
@@ -230,6 +308,42 @@ export default function BookTicketScreen() {
           </TouchableOpacity>
         </View>
 
+        <Text style={styles.sectionLabel}>Guest Security Details</Text>
+        <View style={styles.guestsContainer}>
+          {guests.map((guest, index) => (
+            <View key={index} style={styles.guestCard}>
+              <View style={styles.guestHeader}>
+                <Shield size={rf(14)} color={COLORS.textTertiary} />
+                <Text style={styles.guestTitle}>Guest {index + 1} {index === 0 ? '(Primary)' : ''}</Text>
+              </View>
+              <View style={styles.guestInputs}>
+                <View style={{ flex: 2 }}>
+                  <Text style={styles.inputLabel}>Full Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter name"
+                    placeholderTextColor={COLORS.textDisabled}
+                    value={guest.name}
+                    onChangeText={(val) => updateGuest(index, 'name', val)}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Age</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="21"
+                    placeholderTextColor={COLORS.textDisabled}
+                    keyboardType="numeric"
+                    maxLength={2}
+                    value={guest.age}
+                    onChangeText={(val) => updateGuest(index, 'age', val)}
+                  />
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+
         <Text style={styles.sectionLabel}>Order Summary</Text>
         <View style={styles.priceCard}>
           <View style={styles.priceRow}>
@@ -250,36 +364,36 @@ export default function BookTicketScreen() {
         <Text style={styles.sectionLabel}>Payment Method</Text>
         <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
           <TouchableOpacity
-            style={[styles.paymentBtn, paying && { opacity: 0.8 }]}
-            disabled={paying || booking}
+            style={[styles.paymentBtn, (paying || !isFormValid) && { opacity: 0.6 }]}
+            disabled={paying || booking || !isFormValid}
             onPress={handlePayment}
             activeOpacity={0.9}
           >
             <LinearGradient
-              colors={['#6739B7', '#542A99']}
+              colors={['#000000', '#1A1A1A']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.paymentGradient}
             >
               <View style={styles.paymentRow}>
                 <View style={styles.paymentLogoWrap}>
-                  <Image 
-                    source={require('../../assets/images/phonepe-logo.png')} 
-                    style={styles.phonepeLogo}
+                  <Image
+                    source={require('../../assets/images/rzp_final_v1.png')}
+                    style={styles.paymentLogo}
                     contentFit="contain"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.paymentTitle}>Pay with PhonePe</Text>
-                  <Text style={styles.paymentSub}>Safe & Secure Digital Payment</Text>
+                  <Text style={styles.paymentTitle}>Pay with Razorpay</Text>
+                  <Text style={styles.paymentSub}>Secure Payment Gateway</Text>
                 </View>
                 <View style={styles.amountBadge}>
                   <Text style={styles.amountText}>RS. {grand.toLocaleString()}</Text>
                 </View>
               </View>
-              
+
               <View style={styles.paymentDivider} />
-              
+
               <View style={styles.paymentFooter}>
                 <Shield size={rf(13)} color="rgba(255,255,255,0.7)" />
                 <Text style={styles.paymentTrustText}>Encryption verified server-side</Text>
@@ -350,6 +464,13 @@ const styles = StyleSheet.create({
   qtyCenter: { alignItems: 'center', gap: rs(2) },
   qtyNum: { color: COLORS.textPrimary, fontSize: rf(30), fontWeight: '800' },
   qtyLabel: { color: COLORS.textTertiary, fontSize: rf(12) },
+  guestsContainer: { gap: rs(10), marginBottom: rs(20) },
+  guestCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: rs(14), borderWidth: 1, borderColor: COLORS.border, gap: rs(10) },
+  guestHeader: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  guestTitle: { color: COLORS.textSecondary, fontSize: rf(12), fontWeight: '700' },
+  guestInputs: { flexDirection: 'row', gap: rs(12) },
+  inputLabel: { color: COLORS.textTertiary, fontSize: rf(10), marginBottom: rs(4), textTransform: 'uppercase' },
+  input: { backgroundColor: COLORS.bgTertiary, borderRadius: RADIUS.md, paddingHorizontal: rs(12), paddingVertical: rs(10), color: COLORS.textPrimary, fontSize: rf(14), borderWidth: 1, borderColor: COLORS.border },
   priceCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: rs(16), borderWidth: 1, borderColor: COLORS.border, marginBottom: rs(20), gap: rs(10) },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   priceLabel: { color: COLORS.textSecondary, fontSize: rf(14) },
@@ -357,11 +478,11 @@ const styles = StyleSheet.create({
   priceDivider: { height: 1, backgroundColor: COLORS.border },
   totalLabel: { color: COLORS.textPrimary, fontSize: rf(15), fontWeight: '700' },
   totalValue: { color: '#FFF', fontSize: rf(20), fontWeight: '800' },
-  paymentBtn: { borderRadius: RADIUS.xl, overflow: 'hidden', elevation: 8, shadowColor: '#542A99', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  paymentBtn: { borderRadius: RADIUS.xl, overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   paymentGradient: { padding: rs(18) },
   paymentRow: { flexDirection: 'row', alignItems: 'center', gap: rs(14) },
   paymentLogoWrap: { width: rs(44), height: rs(44), borderRadius: rs(12), backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', padding: rs(5) },
-  phonepeLogo: { width: '100%', height: '100%' },
+  paymentLogo: { width: '100%', height: '100%' },
   paymentTitle: { color: '#FFF', fontSize: rf(16), fontWeight: '800', letterSpacing: -0.2 },
   paymentSub: { color: 'rgba(255,255,255,0.7)', fontSize: rf(11), marginTop: 2, fontWeight: '500' },
   amountBadge: { backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: rs(12), paddingVertical: rs(6), borderRadius: RADIUS.lg },

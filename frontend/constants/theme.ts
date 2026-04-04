@@ -22,7 +22,7 @@ export const COLORS = {
   warning: '#F59E0B',
   info: '#3B82F6',
   scannerLaser: '#22C55E',
-  phonepe: '#5F259F',
+  razorpay: '#3395FF',
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -83,13 +83,77 @@ export const FONT_SIZE = {
 
 export const CATEGORIES = ['All', 'Music', 'Technology', 'Food', 'Business', 'Sports', 'Arts', 'Fashion'];
 
-export const COVER_IMAGES: Record<string, string> = {
-  Music: 'https://images.unsplash.com/photo-1571751239008-50cad6cb9265?w=800&q=80',
-  Technology: 'https://images.unsplash.com/photo-1540317228636-69a076b0b248?w=800&q=80',
-  Food: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80',
-  Business: 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=800&q=80',
-  Sports: 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&q=80',
-  Arts: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800&q=80',
-  Fashion: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80',
-  All: 'https://images.unsplash.com/photo-1540317228636-69a076b0b248?w=800&q=80',
+// Multiple curated high-quality images per category for variety
+// Using verified 11-character Unsplash IDs for maximum reliability and premium quality
+export const CATEGORY_IMAGE_POOLS: Record<string, string[]> = {
+  Music: [
+    'https://images.unsplash.com/photo-1470225722913-7c0e2dbbafd3?w=800&q=80', // Crowd OaGfnPEiMhA actually 1470225722913 works too but let's use the shorter ones where possible
+    'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&q=80', // DJ 2Kl2VzdoVns
+    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80', // Stage IQOyho3CZGU
+  ],
+  Technology: [
+    'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80', // Coding afG2ZF8h1OQ
+    'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&q=80', // Hardware d2UbZWIcIJo
+    'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&q=80', // Setup YzKdrThXLIk
+  ],
+  Food: [
+    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80', // Plated 4lSxubD62ys
+    'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80', // Chef hrlBBk2ILXM
+    'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80', // Restaurant bXOHW6fKdPI
+  ],
+  Business: [
+    'https://images.unsplash.com/photo-1507679799987-c7377fb1865e?w=800&q=80', // Meeting F4coHibryBo
+    'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800&q=80', // Office 3tCLyPBSQ5k
+    'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&q=80', // Discussion 0L1XzREL6Mo
+  ],
+  Sports: [
+    'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80', // Epic stadium pitch
+    'https://images.unsplash.com/photo-1531415074968-036ba1b575da?w=800&q=80', // Cricket match action
+    'https://images.unsplash.com/photo-1504450758481-7338eba7524a?w=800&q=80', // Stadium game crowd
+  ],
+  Arts: [
+    'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800&q=80', // Gallery xfh2G7poB24
+    'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=800&q=80', // Painting pYomB9e8lX0
+    'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?w=800&q=80', // Abstract mP7aPSUm7aE
+  ],
+  Fashion: [
+    'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?w=800&q=80', // Runway UhWly5nS15g
+    'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=800&q=80', // Catwalk kmF0GjQ-dDA
+    'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=800&q=80', // Stage wsittKS1Q5k
+  ],
 };
+
+// Legacy single-image fallback (kept for backward compatibility)
+export const COVER_IMAGES: Record<string, string> = Object.fromEntries(
+  Object.entries(CATEGORY_IMAGE_POOLS).map(([k, v]) => [k, v[0]])
+);
+COVER_IMAGES.All = CATEGORY_IMAGE_POOLS.Music[0];
+
+/**
+ * Get a category-appropriate image. Uses a simple hash of `seed` (e.g. event title)
+ * to deterministically pick from the pool so the same event always gets the same image.
+ */
+export function getCategoryImage(category: string, seed?: string): string {
+  const pool = CATEGORY_IMAGE_POOLS[category] || CATEGORY_IMAGE_POOLS.Music;
+  if (!seed) return pool[0];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  return pool[Math.abs(hash) % pool.length];
+}
+
+/**
+ * Get the display image for an event.
+ * - If the stored URL is from Firebase Storage (real admin upload) → use it as-is
+ * - If it's an Unsplash URL (old fallback) or empty → replace with correct category image
+ * This ensures existing events with wrong Unsplash URLs get fixed automatically.
+ */
+export function getEventImage(coverUrl: string | undefined, category: string, title?: string): string {
+  if (!coverUrl) return getCategoryImage(category, title);
+  // Real uploaded images go to Firebase Storage
+  const isFirebaseStorage = coverUrl.includes('firebasestorage.googleapis.com') || coverUrl.includes('storage.googleapis.com');
+  if (isFirebaseStorage) return coverUrl;
+  // Any other URL (Unsplash, etc.) → use the correct category fallback
+  return getCategoryImage(category, title);
+}

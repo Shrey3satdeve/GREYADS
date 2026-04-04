@@ -35,7 +35,7 @@ react {
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
-    nodeExecutableAndArgs = ["d:/GREYADS/frontend/android/node_modules/node/bin/node.exe"]
+    // nodeExecutableAndArgs = ["node"]
 
     //
     //   The path to the CLI configuration file. Default is empty.
@@ -101,19 +101,15 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        release {
-            storeFile file('greyadz-release.keystore')
-            storePassword GREYADZ_STORE_PASSWORD
-            keyAlias GREYADZ_KEY_ALIAS
-            keyPassword GREYADZ_KEY_PASSWORD
-        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.release
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.debug
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

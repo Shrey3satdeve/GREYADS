@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Share, Dimensions,
@@ -8,6 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Share2, Download, MapPin, Calendar, User } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 import BrandMark from '../../components/BrandMark';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
@@ -26,6 +29,7 @@ interface TicketData {
   total_price: number;
   user_name: string;
   user_email: string;
+  guests?: Array<{ name: string, age: string }>;
 }
 
 const STATUS_CONFIG = {
@@ -39,7 +43,9 @@ export default function DigitalTicketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const router = useRouter();
+  const ticketRef = useRef<ViewShot>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -50,8 +56,54 @@ export default function DigitalTicketScreen() {
   }, [id]);
 
   const handleShare = async () => {
-    if (!ticket) return;
-    await Share.share({ message: `My ticket for ${ticket.event_title}\nRef: ${ticket.booking_ref}\nBooked via GreyAdz.` });
+    try {
+      if (!ticket || !ticketRef.current) return;
+      
+      // Capture the ticket as an image first
+      const uri = await ticketRef.current.capture?.();
+      if (!uri) throw new Error("Could not generate ticket image");
+
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        // Fallback to text sharing if image sharing is not available
+        await Share.share({ 
+          message: `My ticket for ${ticket.event_title}\nRef: ${ticket.booking_ref}\nBooked via GreyAdz.` 
+        });
+        return;
+      }
+
+      // Share the image file directly (Fixes WhatsApp QR visibility)
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: `Share Ticket: ${ticket.event_title}`,
+        UTI: 'public.png'
+      });
+
+    } catch (err: any) {
+      alert('Share failed: ' + err.message);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      if (!ticket || !ticketRef.current) return;
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Permission required to save ticket to gallery.');
+        return;
+      }
+      setDownloading(true);
+      const uri = await ticketRef.current.capture?.();
+      if (uri) {
+        await MediaLibrary.saveToLibraryAsync(uri);
+        alert('Ticket saved to gallery successfully!');
+      }
+    } catch (err: any) {
+      alert('Error saving ticket: ' + err.message);
+    } finally {
+      setDownloading(false);
+    }
   };
 
   if (loading) {
@@ -89,7 +141,8 @@ export default function DigitalTicketScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Grey Metallic Ticket */}
-        <View style={styles.ticketOuter}>
+        <ViewShot ref={ticketRef} options={{ format: 'png', quality: 1 }}>
+          <View style={styles.ticketOuter}>
           <LinearGradient
             colors={['#E5E7EB', '#D1D5DB', '#9CA3AF']}
             start={{ x: 0, y: 0 }}
@@ -138,6 +191,21 @@ export default function DigitalTicketScreen() {
               </View>
             </View>
 
+            {/* Guest List - Security Requirement */}
+            {ticket.guests && ticket.guests.length > 0 && (
+              <View style={styles.guestsBadgeSection}>
+                <Text style={styles.guestsHeader}>ATTENDEES / SECURITY VERIFIED</Text>
+                <View style={styles.guestList}>
+                  {ticket.guests.map((g, idx) => (
+                    <View key={idx} style={styles.guestPill}>
+                      <Text style={styles.guestPillText}>{g.name}</Text>
+                      <View style={styles.ageBadge}><Text style={styles.ageText}>{g.age}</Text></View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {/* Dashed separator */}
             <View style={styles.separator}>
               <View style={styles.holeLeft} />
@@ -175,12 +243,13 @@ export default function DigitalTicketScreen() {
             </View>
           </LinearGradient>
         </View>
+        </ViewShot>
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity testID="download-btn" style={styles.actionBtn} onPress={() => { }}>
-            <Download size={18} color={COLORS.textPrimary} />
-            <Text style={styles.actionBtnText}>Save to Wallet</Text>
+          <TouchableOpacity testID="download-btn" style={styles.actionBtn} onPress={handleDownload} disabled={downloading}>
+            {downloading ? <ActivityIndicator size="small" color="#000" /> : <Download size={18} color={COLORS.textPrimary} />}
+            <Text style={styles.actionBtnText}>{downloading ? 'Saving...' : 'Save to Wallet'}</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="share-qr-btn" style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={handleShare}>
             <Share2 size={18} color="#000" />
@@ -235,4 +304,11 @@ const styles = StyleSheet.create({
   actionBtnPrimary: { backgroundColor: COLORS.btnPrimary, borderColor: 'transparent' },
   actionBtnText: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '600' },
   actionBtnTextPrimary: { color: '#000', fontSize: 14, fontWeight: '700' },
+  guestsBadgeSection: { marginTop: 12, padding: 12, backgroundColor: 'rgba(0,0,0,0.04)', borderRadius: RADIUS.lg, zIndex: 10 },
+  guestsHeader: { fontSize: 8, fontWeight: '900', color: '#6B7280', letterSpacing: 1, marginBottom: 8 },
+  guestList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  guestPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.md, borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
+  guestPillText: { color: '#111827', fontSize: 11, fontWeight: '700' },
+  ageBadge: { backgroundColor: '#000', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4 },
+  ageText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
 });

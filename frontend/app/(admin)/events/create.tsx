@@ -9,8 +9,7 @@ import { X, ChevronDown, CheckCircle, Camera, Image as ImageIcon, MapPin, Calend
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../../utils/api';
 import { storage } from '../../../utils/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { COLORS, RADIUS, SPACING, CATEGORIES, COVER_IMAGES, CATEGORY_COLORS } from '../../../constants/theme';
+import { COLORS, RADIUS, SPACING, CATEGORIES, COVER_IMAGES, CATEGORY_COLORS, getCategoryImage } from '../../../constants/theme';
 import { rw, rh, rf, rs, SCREEN_W } from '../../../utils/responsive';
 import { useDialog } from '../../../components/AppDialog';
 
@@ -49,7 +48,7 @@ export default function CreateEventScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       allowsEditing: false,
-      quality: 0.8,
+      quality: 0.6,
     });
     if (!result.canceled && result.assets) {
       const newUris = result.assets.map(asset => asset.uri);
@@ -74,12 +73,22 @@ export default function CreateEventScreen() {
   };
 
   const uploadImage = async (uri: string) => {
+    const filename = `events/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+    
+    // In React Native with @react-native-firebase/storage, putFile is much more stable than put(blob)
+    if (Platform.OS !== 'web' && uri.startsWith('file://')) {
+      const storageRef = storage.ref(filename);
+      const cleanUri = uri.replace('file://', '');
+      await storageRef.putFile(cleanUri);
+      return await storageRef.getDownloadURL();
+    }
+
+    // Fallback for web or non-file URIs
     const response = await fetch(uri);
     const blob = await response.blob();
-    const filename = `events/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-    const storageRef = ref(storage, filename);
-    await uploadBytes(storageRef, blob);
-    return await getDownloadURL(storageRef);
+    const storageRef = (storage as any).ref(filename);
+    await storageRef.put(blob);
+    return await storageRef.getDownloadURL();
   };
 
   const handleCreate = async () => {
@@ -113,7 +122,7 @@ export default function CreateEventScreen() {
         payload.images = imageUrls;
       }
  else {
-        payload.cover_image_url = COVER_IMAGES[form.category] || COVER_IMAGES.Music;
+        payload.cover_image_url = getCategoryImage(form.category, form.title);
         payload.images = [payload.cover_image_url];
       }
       payload.is_recommended = form.is_recommended;

@@ -3,9 +3,7 @@ import {
   setDoc, 
   doc, 
   serverTimestamp, 
-  getDocs,
-  deleteDoc
-} from "firebase/firestore";
+} from "@react-native-firebase/firestore";
 import { db } from "./firebase";
 
 const EVENTS = [
@@ -39,6 +37,15 @@ const EVENTS = [
   }
 ];
 
+const ADMIN_UID = "ADMIN_ID_PLACEHOLDER"; // User must replace with real UID after creating in Auth
+const DEFAULT_ADMIN = {
+  email: "admin@greyads.com",
+  name: "System Admin",
+  role: "admin",
+  created_at: new Date(),
+  updated_at: new Date()
+};
+
 export const seedFirestore = async () => {
   console.log("🌱 Seeding Firestore...");
   
@@ -53,6 +60,17 @@ export const seedFirestore = async () => {
       });
       console.log(`✅ Added Event: ${event.title}`);
     }
+
+    // 2. Seed Admin User (Optional/Example)
+    const usersCol = collection(db, "users");
+    // Since we don't know the UID yet, we can create a dummy or instruct 
+    // This will at least create the collection in the UI if we add one doc.
+    await setDoc(doc(usersCol, "example_admin_id"), {
+        ...DEFAULT_ADMIN,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+    });
+    console.log(`✅ Created 'users' collection with example admin.`);
 
     console.log("✨ Seeding complete!");
   } catch (error) {

@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, ActivityIndicator, Dimensions, FlatList, Share, Alert,
+  ActivityIndicator, Dimensions, FlatList, Share, Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Heart, MapPin, Calendar, Clock, Tag, Users, Share2 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../utils/api';
 import BrandMark from '../../components/BrandMark';
-import { COLORS, CATEGORY_COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { COLORS, CATEGORY_COLORS, RADIUS, SPACING, getCategoryImage, getEventImage } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +30,19 @@ interface EventDetail {
   organizer_name: string;
   tags: string[];
   status: string;
+}
+
+// Carousel slide — uri is already resolved by getEventImage
+function CarouselImage({ uri, fallbackUri }: { uri: string; fallbackUri: string }) {
+  const [src, setSrc] = useState(uri);
+  useEffect(() => { setSrc(uri); }, [uri]);
+  const { width } = Dimensions.get('window');
+  return (
+    <View style={{ width, height: 320 }}>
+      <Image source={{ uri: src }} style={styles.heroImg} onError={() => setSrc(fallbackUri)} />
+      <LinearGradient colors={['rgba(0,0,0,0.3)', 'transparent', '#000000']} style={StyleSheet.absoluteFillObject} />
+    </View>
+  );
 }
 
 function formatDate(d: string) {
@@ -95,9 +109,14 @@ export default function EventDetailScreen() {
   }
 
   const catColor = CATEGORY_COLORS[event.category] || '#FFF';
-  const soldPct = Math.round(((event.total_tickets - event.available_tickets) / event.total_tickets) * 100);
+  const soldPct = event.total_tickets > 0
+    ? Math.round(((event.total_tickets - event.available_tickets) / event.total_tickets) * 100)
+    : 0;
 
-  const carouselData = (event.images && event.images.length > 0) ? event.images : [event.cover_image_url];
+  const fallbackImg = getCategoryImage(event.category, event.title);
+  const carouselData = (event.images && event.images.length > 0)
+    ? event.images.map(img => getEventImage(img, event.category, event.title))
+    : [getEventImage(event.cover_image_url, event.category, event.title)];
 
   return (
     <View style={styles.container} testID="event-detail-screen">
@@ -115,10 +134,10 @@ export default function EventDetailScreen() {
             }}
             keyExtractor={(_, i) => i.toString()}
             renderItem={({ item }) => (
-              <View style={{ width, height: 320 }}>
-                <Image source={{ uri: item }} style={styles.heroImg} />
-                <LinearGradient colors={['rgba(0,0,0,0.3)', 'transparent', '#000000']} style={StyleSheet.absoluteFillObject} />
-              </View>
+              <CarouselImage
+                uri={item}
+                fallbackUri={getCategoryImage(event.category, event.title)}
+              />
             )}
           />
 
@@ -213,7 +232,7 @@ export default function EventDetailScreen() {
           <Text style={styles.description}>{event.description}</Text>
 
           {/* Tags */}
-          {event.tags.length > 0 && (
+          {(event.tags ?? []).length > 0 && (
             <>
               <Text style={styles.sectionTitle}>Tags</Text>
               <View style={styles.tags}>

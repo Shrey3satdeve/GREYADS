@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, RefreshControl, Animated,
-  useWindowDimensions,
+  useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, MapPin, Calendar, TrendingUp, Zap, Star, Sun, CloudSun, Moon } from 'lucide-react-native';
+import { Search, MapPin, Calendar, TrendingUp, Zap, Sun, CloudSun, Moon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import BrandMark from '../../components/BrandMark';
 import { api } from '../../utils/api';
-import { COLORS, RADIUS, CATEGORY_COLORS, CATEGORY_BG, CATEGORIES, FONT_SIZE } from '../../constants/theme';
+import { COLORS, RADIUS, CATEGORY_COLORS, CATEGORY_BG, CATEGORIES, FONT_SIZE, getCategoryImage, getEventImage } from '../../constants/theme';
 import { rw, rh, rf, rs, SCREEN_W, isSmallPhone, GRID_CARD } from '../../utils/responsive';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,7 +25,6 @@ const FIRST_NAME_MAX = 10;
 
 export default function HomeScreen() {
   const [events, setEvents] = useState<Event[]>([]);
-  const [featured, setFeatured] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [category, setCategory] = useState('All');
@@ -36,22 +36,17 @@ export default function HomeScreen() {
 
   // Responsive card sizes based on actual screen width
   const gridCard = (width - rs(48)) / 2;
-  const featuredH = Math.min(rh(220), width * 0.55);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const heroScale = useRef(new Animated.Value(0.96)).current;
 
   useEffect(() => {
     fetchEvents();
   }, [category]);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(heroScale, { toValue: 1, tension: 100, friction: 8, useNativeDriver: true }),
-    ]).start();
-  }, [featured]);
+    Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  }, [events]);
 
   const fetchEvents = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -61,7 +56,6 @@ export default function HomeScreen() {
       const s = search ? `&search=${encodeURIComponent(search)}` : '';
       const data = await api.get(`/events?limit=20${q ? '&' + q : ''}${s}`);
       const evts: Event[] = data.events || [];
-      setFeatured(evts[0] || null);
       setEvents(evts);
     } catch { }
     if (isRefresh) setRefreshing(false);
@@ -80,43 +74,52 @@ export default function HomeScreen() {
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const GreetingIcon = hour < 12 ? Sun : hour < 17 ? CloudSun : Moon;
 
+  const gridEvents = events;
+
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: COLORS.bg }}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLogoContainer}>
-            <Image 
-              source={require('../../assets/images/greyadz-logo-v3.png')}
-              style={{ width: 48, height: 48 }}
-              resizeMode="contain"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={[styles.greeting, { fontSize: rf(12) }]}>{greeting}</Text>
-              <GreetingIcon size={rf(12)} color={COLORS.textTertiary} strokeWidth={2} />
+        {/* Header Section */}
+        <View style={styles.premiumHeader}>
+          <View style={styles.headerTop}>
+            <View style={styles.logoRow}>
+              <View style={styles.minimalLogoPill}>
+                <BrandMark size={rs(24)} imageScale={0.8} />
+                <View style={styles.logoBrandText}>
+                  <Text style={styles.brandGrey}>GREY</Text>
+                  <Text style={styles.brandAdz}>ADZ</Text>
+                </View>
+              </View>
             </View>
-            <Text style={[styles.name, { fontSize: rf(22) }]} numberOfLines={1}>Hello, {firstName}</Text>
+            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(tabs)/notifications')}>
+              <Zap size={rf(16)} color="#FFF" strokeWidth={2.5} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.notifBtn} onPress={() => router.push('/(tabs)/notifications')}>
-            <Zap size={rf(18)} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchRow}>
-          <View style={styles.searchWrap}>
-            <Search size={rf(16)} color={COLORS.textTertiary} />
-            <TextInput
-              testID="search-input"
-              style={[styles.searchInput, { fontSize: rf(14) }]}
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search events, venues..."
-              placeholderTextColor={COLORS.textTertiary}
-              returnKeyType="search"
-            />
+          <View style={styles.greetingSection}>
+            <View style={styles.greetingTextGroup}>
+              <View style={styles.timeOfDayRow}>
+                <GreetingIcon size={rf(10)} color={COLORS.textTertiary} strokeWidth={2.5} />
+                <Text style={styles.greetingSmall}>{greeting}</Text>
+              </View>
+              <Text style={styles.userNameHeader} numberOfLines={1}>Hello, {firstName}</Text>
+            </View>
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchGlass}>
+              <Search size={rf(15)} color={COLORS.textTertiary} strokeWidth={2.5} />
+              <TextInput
+                testID="search-input"
+                style={styles.searchField}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search events, venues..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                returnKeyType="search"
+              />
+            </View>
           </View>
         </View>
       </SafeAreaView>
@@ -148,67 +151,17 @@ export default function HomeScreen() {
             <ActivityIndicator color="#FFF" size="large" />
           </View>
         ) : (
-          <>
-            {/* Featured Event — 3D Hero Card */}
-            {featured && (
-              <Animated.View style={{ transform: [{ scale: heroScale }], opacity: fadeAnim }}>
-                <Text style={[styles.sectionTitle, { fontSize: rf(13) }]}>Featured</Text>
-                <TouchableOpacity
-                  testID={`featured-event-${featured.id}`}
-                  activeOpacity={0.92}
-                  onPress={() => router.push(`/event/${featured.id}`)}
-                >
-                  <View style={[styles.featuredCard, { height: featuredH }]}>
-                    <Image source={{ uri: featured.cover_image_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.95)']}
-                      locations={[0, 0.45, 1]}
-                      style={StyleSheet.absoluteFill}
-                    />
-                    {/* Category + Live Badge */}
-                    <View style={styles.featuredTopRow}>
-                      <View style={[styles.catBadge, { backgroundColor: (CATEGORY_COLORS[featured.category] || '#FFF') + '20', borderColor: (CATEGORY_COLORS[featured.category] || '#FFF') + '40' }]}>
-                        <Text style={[styles.catBadgeText, { color: CATEGORY_COLORS[featured.category] || '#FFF' }]}>{featured.category}</Text>
-                      </View>
-                      {featured.available_tickets < featured.total_tickets * 0.2 && (
-                        <View style={styles.hotBadge}>
-                          <TrendingUp size={rf(10)} color="#FFF" />
-                          <Text style={styles.hotText}>Selling Fast</Text>
-                        </View>
-                      )}
-                    </View>
-                    {/* Bottom Info */}
-                    <View style={styles.featuredBottom}>
-                      <Text style={[styles.featuredTitle, { fontSize: rf(18) }]} numberOfLines={2}>{featured.title}</Text>
-                      <View style={styles.featuredMeta}>
-                        <View style={styles.metaItem}>
-                          <Calendar size={rf(12)} color="rgba(255,255,255,0.6)" />
-                          <Text style={[styles.metaText, { fontSize: rf(12) }]}>
-                            {new Date(featured.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                          </Text>
-                        </View>
-                        <View style={styles.metaItem}>
-                          <MapPin size={rf(12)} color="rgba(255,255,255,0.6)" />
-                          <Text style={[styles.metaText, { fontSize: rf(12) }]} numberOfLines={1}>{featured.venue.split(',')[0]}</Text>
-                        </View>
-                        <View style={styles.pricePill}>
-                          <Text style={[styles.pricePillText, { fontSize: rf(13) }]}>₹{featured.price.toLocaleString()}</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
+          <Animated.View style={{ opacity: fadeAnim }}>
 
-            {/* All Events Grid */}
-            {events.length > 0 && (
+
+            {/* ─── ALL EVENTS GRID ─── */}
+            {gridEvents.length > 0 && (
               <>
-                <Text style={[styles.sectionTitle, { fontSize: rf(13), marginTop: rs(20) }]}>
+                <Text style={styles.sectionTitle}>
                   {category === 'All' ? 'All Events' : `${category} Events`}
                 </Text>
                 <View style={styles.grid}>
-                  {events.map((evt, i) => (
+                  {gridEvents.map((evt, i) => (
                     <EventCard
                       key={evt.id}
                       evt={evt}
@@ -228,7 +181,7 @@ export default function HomeScreen() {
                 <Text style={[styles.emptyText, { fontSize: rf(13) }]}>Try a different category or search</Text>
               </View>
             )}
-          </>
+          </Animated.View>
         )}
         <View style={{ height: rs(120) }} />
       </ScrollView>
@@ -236,7 +189,28 @@ export default function HomeScreen() {
   );
 }
 
-// Animated event card with 3D press effect
+
+// ─── Smart Event Image with category fallback ─────────────────────────────
+function EventImage({ uri, category, title }: { uri?: string; category: string; title: string }) {
+  // getEventImage always returns Firebase Storage URL (real uploads) or correct category image
+  // This fixes events with wrong Unsplash URLs stored in Firestore
+  const [imgUri, setImgUri] = useState(getEventImage(uri, category, title));
+  
+  return (
+    <Image
+      source={{ uri: imgUri }}
+      style={styles.gridCardImg}
+      contentFit="cover"
+      transition={200}
+      onError={() => {
+        // If image fails, force a fresh random fallback from the pool
+        setImgUri(getEventImage(undefined, category, title));
+      }}
+    />
+  );
+}
+
+// ─── Grid Event Card ─────────────────────────────────────────────────────
 function EventCard({ evt, cardWidth, onPress, delay }: { evt: Event; cardWidth: number; onPress: () => void; delay: number }) {
   const scale = useRef(new Animated.Value(0.92)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -268,8 +242,8 @@ function EventCard({ evt, cardWidth, onPress, delay }: { evt: Event; cardWidth: 
         onPress={onPress}
         style={[styles.gridCard, { width: cardWidth, height: cardH }]}
       >
-        {/* Cover Image */}
-        <Image source={{ uri: evt.cover_image_url }} style={styles.gridCardImg} resizeMode="cover" />
+        {/* Cover Image — falls back to category image on error */}
+        <EventImage uri={evt.cover_image_url} category={evt.category} title={evt.title} />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.85)']}
           locations={[0.4, 1]}
@@ -300,39 +274,54 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingHorizontal: rs(16) },
 
-  headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(20), paddingTop: rs(4), paddingBottom: rs(8) },
-  headerLogoContainer: { marginRight: rs(12) },
-  greeting: { color: COLORS.textTertiary, fontWeight: '500' },
-  name: { color: COLORS.textPrimary, fontWeight: '800', letterSpacing: -0.5 },
-  notifBtn: { width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
+  premiumHeader: { paddingHorizontal: rs(20), paddingTop: rs(10), paddingBottom: rs(8) },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rs(18) },
+  logoRow: { flex: 1 },
+  minimalLogoPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111',
+    alignSelf: 'flex-start',
+    padding: rs(4),
+    paddingRight: rs(12),
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)'
+  },
+  logoBrandText: { flexDirection: 'row', marginLeft: rs(6) },
+  brandGrey: { color: '#FFF', fontSize: rf(12), fontWeight: '900', letterSpacing: 0.5 },
+  brandAdz: { color: '#71717A', fontSize: rf(12), fontWeight: '900', letterSpacing: 0.5 },
+  iconButton: { width: rs(36), height: rs(36), borderRadius: 18, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
 
-  searchRow: { paddingHorizontal: rs(20), paddingBottom: rs(12) },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: rs(10), backgroundColor: COLORS.bgCard, borderRadius: RADIUS.full, paddingHorizontal: rs(16), paddingVertical: rs(11), borderWidth: 1, borderColor: COLORS.border },
-  searchInput: { flex: 1, color: COLORS.textPrimary },
+  greetingSection: { marginBottom: rs(20) },
+  greetingTextGroup: { gap: rs(4) },
+  timeOfDayRow: { flexDirection: 'row', alignItems: 'center', gap: rs(5) },
+  greetingSmall: { color: COLORS.textTertiary, fontSize: rf(11), fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  userNameHeader: { color: '#FFF', fontSize: rf(28), fontWeight: '800', letterSpacing: -0.8 },
 
-  catScroll: { marginBottom: rs(16) },
-  catContent: { paddingHorizontal: rs(16), gap: rs(8), paddingBottom: rs(4) },
-  catChip: { paddingHorizontal: rs(14), paddingVertical: rs(8), borderRadius: RADIUS.full, backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border },
-  catText: { color: COLORS.textSecondary, fontSize: rf(13), fontWeight: '600' },
+  searchContainer: { marginBottom: rs(6) },
+  searchGlass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(12),
+    backgroundColor: '#111',
+    borderRadius: 16,
+    paddingHorizontal: rs(16),
+    height: rs(52),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)'
+  },
+  searchField: { flex: 1, color: '#FFF', fontSize: rf(14), fontWeight: '500' },
+
+  catScroll: { marginBottom: rs(12) },
+  catContent: { paddingHorizontal: rs(20), gap: rs(8), paddingBottom: rs(4) },
+  catChip: { paddingHorizontal: rs(16), paddingVertical: rs(10), borderRadius: 14, backgroundColor: '#111', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  catText: { color: 'rgba(255,255,255,0.4)', fontSize: rf(13), fontWeight: '700' },
+
+  sectionTitle: { color: 'rgba(255,255,255,0.3)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: rs(12), fontSize: rf(11) },
 
   loadWrap: { paddingVertical: rh(80), alignItems: 'center' },
 
-  sectionTitle: { color: COLORS.textTertiary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: rs(12) },
-
-  // Featured Card
-  featuredCard: { borderRadius: RADIUS.xl, overflow: 'hidden', marginBottom: rs(4) },
-  featuredTopRow: { position: 'absolute', top: rs(14), left: rs(14), right: rs(14), flexDirection: 'row', alignItems: 'center', gap: rs(8) },
-  catBadge: { borderRadius: RADIUS.full, paddingHorizontal: rs(10), paddingVertical: rs(4), borderWidth: 1 },
-  catBadgeText: { fontSize: rf(11), fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  hotBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EF4444', borderRadius: RADIUS.full, paddingHorizontal: rs(8), paddingVertical: rs(4) },
-  hotText: { color: '#FFF', fontSize: rf(10), fontWeight: '700' },
-  featuredBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: rs(16) },
-  featuredTitle: { color: '#FFF', fontWeight: '800', letterSpacing: -0.3, marginBottom: rs(10), lineHeight: rf(24) },
-  featuredMeta: { flexDirection: 'row', alignItems: 'center', gap: rs(10), flexWrap: 'wrap' },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: rs(4) },
-  metaText: { color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
-  pricePill: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: RADIUS.full, paddingHorizontal: rs(10), paddingVertical: rs(3), borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  pricePillText: { color: '#FFF', fontWeight: '800' },
 
   // Grid
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(12), justifyContent: 'space-between' },

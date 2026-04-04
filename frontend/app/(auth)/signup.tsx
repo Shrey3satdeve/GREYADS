@@ -15,7 +15,7 @@ import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../../utils/firebase';
 import { useDialog } from '../../components/AppDialog';
-import { createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import rnfbAuth from '@react-native-firebase/auth';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID, // MUST be a Web Client ID, not an Android Client ID, to get idToken
@@ -64,8 +64,8 @@ export default function SignupScreen() {
         throw new Error("No idToken found after sign-in");
       }
       
-      const credential = GoogleAuthProvider.credential(credentialToken);
-      const userCreds = await signInWithCredential(auth, credential);
+      const credential = rnfbAuth.GoogleAuthProvider.credential(credentialToken);
+      const userCreds = await rnfbAuth().signInWithCredential(credential);
       const fbIdToken = await userCreds.user.getIdToken(true);
       
       await AsyncStorage.setItem('greyads_token', fbIdToken);
@@ -88,35 +88,55 @@ export default function SignupScreen() {
       showDialog({ title: 'Missing Fields', message: 'Please fill in all required fields.' });
       return;
     }
-    if (password.length < 6) {
-      showDialog({ title: 'Weak Password', message: 'Password must be at least 6 characters.' });
+
+    // --- Password strength validation ---
+    if (password.length < 8) {
+      showDialog({ title: 'Weak Password', message: 'Password must be at least 8 characters long.' });
       return;
     }
+    if (!/[A-Z]/.test(password)) {
+      showDialog({ title: 'Weak Password', message: 'Password must contain at least one uppercase letter.' });
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      showDialog({ title: 'Weak Password', message: 'Password must contain at least one number.' });
+      return;
+    }
+
     setLoading(true);
     try {
-      const userCreds = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-      await updateProfile(userCreds.user, { displayName: name.trim() });
-      const idToken = await userCreds.user.getIdToken(true);
-      
-      await AsyncStorage.setItem('greyads_token', idToken);
+      const userCreds = await rnfbAuth().createUserWithEmailAndPassword(
+        email.trim().toLowerCase(),
+        password
+      );
+      await userCreds.user.updateProfile({ displayName: name.trim() });
 
-      const payload: any = { name: name.trim() };
+      // Send email verification — user cannot log in until verified
+      await userCreds.user.sendEmailVerification();
+
+      // Provision the Firestore user document with safe fields only.
+      // Role is always 'user' for self-signup — never trust client-supplied role.
+      const payload: any = { name: name.trim(), role: 'user' };
       if (phone.trim()) payload.phone = phone.trim();
+      await api.patch('/auth/me', payload);
 
-      // This triggers backend to generate the Firestore user document and updates it
-      const data = await api.patch('/auth/me', payload);
-      
-      await login(idToken, data.user);
-      router.replace('/(tabs)');
+      // Sign out immediately — account must be verified before first login.
+      await rnfbAuth().signOut();
+
+      showDialog({
+        title: 'Verify Your Email',
+        message: `A verification link has been sent to ${email.trim().toLowerCase()}. Please check your inbox and verify your email before logging in.`,
+        buttons: [{ label: 'Go to Login', style: 'default', onPress: () => router.replace('/(auth)' as any) }],
+      });
     } catch (err: any) {
-      console.error(err);
-      let errorMsg = err.message || 'Something went wrong';
+      console.error('[Signup]', err.code, err.message);
+      let errorMsg = 'Something went wrong. Please try again.';
       if (err.code === 'auth/email-already-in-use') {
         errorMsg = 'An account with this email already exists.';
       } else if (err.code === 'auth/weak-password') {
-        errorMsg = 'The password is too weak.';
+        errorMsg = 'The password is too weak. Use at least 8 characters.';
       } else if (err.code === 'auth/invalid-email') {
-        errorMsg = 'Invalid email address.';
+        errorMsg = 'Please enter a valid email address.';
       }
       showDialog({ title: 'Signup Failed', message: errorMsg });
     } finally {

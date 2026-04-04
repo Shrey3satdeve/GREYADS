@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Calendar, MapPin, Trash2, Users, RotateCw } from 'lucide-react-native';
+import { Plus, Calendar, MapPin, Trash2, Users, RotateCw, TrendingUp } from 'lucide-react-native';
 import { api } from '../../../utils/api';
 import { COLORS, CATEGORY_COLORS, RADIUS, SPACING } from '../../../constants/theme';
 import { useDialog } from '../../../components/AppDialog';
@@ -73,6 +73,13 @@ export default function AdminEventsScreen() {
           <View style={styles.priceTag}>
             <Text style={styles.priceText}>₹{item.price.toLocaleString()}</Text>
           </View>
+          <TouchableOpacity
+            testID={`delete-event-${item.id}`}
+            style={styles.deleteBtn}
+            onPress={() => deleteEvent(item.id, item.title)}
+          >
+            <Trash2 size={16} color={COLORS.error} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.metaRow}>
@@ -83,27 +90,29 @@ export default function AdminEventsScreen() {
         </View>
 
         {/* Capacity bar - Clickable to view attendees */}
-        <TouchableOpacity 
-          style={styles.capacityRow}
-          onPress={() => router.push(`/(admin)/events/${item.id}/attendees` as any)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.progressBg}>
-            <View style={[styles.progressFill, { width: `${soldPct}%`, backgroundColor: soldPct > 80 ? COLORS.error : '#22C55E' }]} />
-          </View>
-          <View style={styles.capacityMeta}>
-            <Users size={10} color={COLORS.textTertiary} />
-            <Text style={styles.capacityText}>{item.available_tickets}/{item.total_tickets}</Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.eventFooter}>
+          <TouchableOpacity 
+            style={styles.capacityRow}
+            onPress={() => router.push(`/(admin)/events/${item.id}/attendees` as any)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.progressBg}>
+              <View style={[styles.progressFill, { width: `${soldPct}%`, backgroundColor: soldPct > 80 ? COLORS.error : '#22C55E' }]} />
+            </View>
+            <View style={styles.capacityMeta}>
+              <Users size={10} color={COLORS.textTertiary} />
+              <Text style={styles.capacityText}>{item.available_tickets}/{item.total_tickets}</Text>
+            </View>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          testID={`delete-event-${item.id}`}
-          style={styles.deleteBtn}
-          onPress={() => deleteEvent(item.id, item.title)}
-        >
-          <Trash2 size={14} color={COLORS.error} />
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.analyticsBtn}
+            onPress={() => router.push(`/(admin)/events/${item.id}/analytics` as any)}
+          >
+             <TrendingUp size={14} color="#FFEE00" />
+             <Text style={styles.analyticsBtnText}>ANALYTICS</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -182,9 +191,12 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 2 },
   capacityMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   capacityText: { color: COLORS.textTertiary, fontSize: 11 },
-  deleteBtn: { position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.error + '15', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.error + '15', alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 },
   emptyText: { color: COLORS.textSecondary, fontSize: 16 },
   createBtn: { backgroundColor: COLORS.btnPrimary, borderRadius: RADIUS.full, paddingHorizontal: 24, paddingVertical: 12 },
   createBtnText: { color: '#000', fontSize: 14, fontWeight: '700' },
+  eventFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  analyticsBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFEE0015', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#FFEE0030' },
+  analyticsBtnText: { color: '#FFEE00', fontSize: 10, fontWeight: '800' },
 });

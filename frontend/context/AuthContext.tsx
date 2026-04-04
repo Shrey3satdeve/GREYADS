@@ -1,19 +1,28 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../utils/api';
 import { auth, db } from '../utils/firebase';
-import { onIdTokenChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { onIdTokenChanged, signOut } from '@react-native-firebase/auth';
+import {
+  doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot, arrayUnion,
+} from '@react-native-firebase/firestore';
+import messaging from '@react-native-firebase/messaging';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 const STORAGE_TOKEN_KEY = 'greyads_token';
-const STORAGE_USER_KEY = 'greyads_user';
+const STORAGE_USER_KEY  = 'greyads_user';
+
+// Roles recognized on the client.
+// 'superuser' is intentionally excluded — it is a legacy concept with no
+// defined access boundaries. Any account with that role will be treated as
+// 'admin' until the role is migrated server-side.
+export type UserRole = 'user' | 'staff' | 'admin';
 
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'user' | 'staff' | 'admin';
+  role: UserRole;
   avatar_url?: string;
   phone?: string;
   createdAt?: string;
@@ -24,83 +33,143 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (token: string, user: AuthUser) => Promise<void>;
-  updateUser: (data: Partial<AuthUser>) => Promise<void>;
+  updateUser: (data: Partial<Pick<AuthUser, 'name' | 'phone' | 'avatar_url'>>) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// ---------------------------------------------------------------------------
+// Normalize a raw Firestore role string into a safe UserRole enum value.
+// Unknown or privileged legacy roles collapse to 'user' on the client.
+// ---------------------------------------------------------------------------
+function resolveRole(rawRole: string | undefined): UserRole {
+  if (rawRole === 'admin' || rawRole === 'superuser') return 'admin';
+  if (rawRole === 'staff') return 'staff';
+  return 'user';
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser]         = useState<AuthUser | null>(null);
+  const [token, setToken]       = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Safety timeout to prevent splash screen hang
-    const timer = setTimeout(() => {
-      if (isLoading) setIsLoading(false);
-    }, 6000);
+  // Tracks the timestamp of the last *explicit* login so we can distinguish
+  // a legitimate session from a transient Firebase null-state during startup.
+  const lastManualLoginRef = useRef<number>(0);
 
-    // Listen to Firebase Auth token changes
+  // -------------------------------------------------------------------------
+  // Session Bootstrap — React to Firebase ID token changes
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    // Hard timeout: if Firebase never resolves (e.g., no network), stop the
+    // splash screen after 10 seconds rather than hanging indefinitely.
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 10_000);
+
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
+          // Check that the email is verified for email/password accounts.
+          // Phone and Google accounts are implicitly verified by their providers.
+          const isEmailProvider = firebaseUser.providerData?.some(
+            (p: any) => p.providerId === 'password'
+          );
+          if (isEmailProvider && !firebaseUser.emailVerified) {
+            // Do not grant a session to unverified email accounts.
+            // They will be prompted to verify on the login screen.
+            console.warn('[AuthContext] Email not verified — session refused.');
+            await signOut(auth);
+            await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
+            setToken(null);
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+
           const freshToken = await firebaseUser.getIdToken();
           await AsyncStorage.setItem(STORAGE_TOKEN_KEY, freshToken);
           setToken(freshToken);
 
-          // Fetch or Create user profile in Firestore
-          const userRef = doc(db, "users", firebaseUser.uid);
-          const snap = await getDoc(userRef);
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          const snap    = await getDoc(userRef);
 
           let userData: AuthUser;
 
           if (snap.exists()) {
-            const data = snap.data();
-            const isDemoAdmin = data.email === 'admin@greyads.com';
-            const isDemoStaff = data.email === 'staff@greyads.com';
-            const realRole = isDemoAdmin ? 'admin' : (isDemoStaff ? 'staff' : (data.role || 'user'));
+            const data: any = snap.data();
+            userData = {
+              id:         snap.id,
+              name:       data.name       || firebaseUser.displayName || 'User',
+              email:      data.email      || firebaseUser.email       || '',
+              role:       resolveRole(data.role),
+              avatar_url: data.avatar_url || firebaseUser.photoURL    || undefined,
+              phone:      data.phone      || firebaseUser.phoneNumber  || undefined,
+              createdAt:  data.created_at?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+            };
 
-            userData = {
-              id: snap.id,
-              name: data.name,
-              email: data.email,
-              role: realRole,
-              avatar_url: data.avatar_url,
-              phone: data.phone,
-              createdAt: data.created_at?.toDate?.()?.toISOString() || new Date().toISOString(),
-            };
+            // Back-fill phone if Auth has it and Firestore doesn't
+            if (firebaseUser.phoneNumber && !data.phone) {
+              await updateDoc(userRef, { phone: firebaseUser.phoneNumber });
+            }
           } else {
-            // New user (provision in Firestore)
-            const pendingRole = await AsyncStorage.getItem('pending_role');
-            
+            // New user — always provision as 'user'. Privileged roles are
+            // set exclusively by server-side admin operations.
             userData = {
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || 'User',
-              email: firebaseUser.email || '',
-              role: (pendingRole as any) || 'user',
-              avatar_url: firebaseUser.photoURL || undefined,
-              createdAt: new Date().toISOString(),
+              id:         firebaseUser.uid,
+              name:       firebaseUser.displayName || 'User',
+              email:      firebaseUser.email       || '',
+              phone:      firebaseUser.phoneNumber  || undefined,
+              role:       'user',
+              avatar_url: firebaseUser.photoURL    || undefined,
+              createdAt:  new Date().toISOString(),
             };
-            await setDoc(userRef, {
-              ...userData,
-              created_at: serverTimestamp(),
-            });
-            await AsyncStorage.removeItem('pending_role');
+
+            const toSave = Object.fromEntries(
+              Object.entries(userData).filter(([, v]) => v !== undefined)
+            );
+            await setDoc(userRef, { ...toSave, created_at: serverTimestamp() });
           }
 
           await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
           setUser(userData);
+
+          // Register FCM push token
+          try {
+            const authStatus = await messaging().requestPermission();
+            const enabled =
+              authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+              authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+            if (enabled) {
+              const fcmToken = await messaging().getToken();
+              if (fcmToken) {
+                await updateDoc(userRef, {
+                  fcm_tokens: arrayUnion(fcmToken),
+                  updated_at: serverTimestamp(),
+                });
+              }
+            }
+          } catch (pushErr) {
+            console.warn('[AuthContext] Push registration failed (non-fatal):', pushErr);
+          }
         } else {
-          await AsyncStorage.removeItem(STORAGE_TOKEN_KEY);
-          await AsyncStorage.removeItem(STORAGE_USER_KEY);
-          setToken(null);
-          setUser(null);
+          // Firebase reports no user.
+          // Security fix: if this isn't within 5 seconds of a manual login,
+          // treat it as a real session expiry and clear stored credentials.
+          const timeSinceManualLogin = Date.now() - lastManualLoginRef.current;
+          const isTransientState = timeSinceManualLogin < 5_000;
+
+          if (!isTransientState) {
+            console.log('[AuthContext] Firebase session expired — clearing stored credentials.');
+            await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
+            setToken(null);
+            setUser(null);
+          }
         }
       } catch (error) {
-        console.error('Session error with Firebase:', error);
-        setToken(null);
-        setUser(null);
+        console.error('[AuthContext] Session setup error:', error);
+        // On critical errors, fall through to avoid infinite loading state
       } finally {
         setIsLoading(false);
       }
@@ -112,35 +181,87 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // -------------------------------------------------------------------------
+  // Real-time user document listener — handles remote revocation
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!token || !user?.id) return;
+
+    const userRef = doc(db, 'users', user.id);
+    const unsubscribe = onSnapshot(
+      userRef,
+      async (snap) => {
+        if (!snap.exists()) return;
+        const data: any = snap.data();
+
+        if (data.is_revoked) {
+          console.warn('[AuthContext] Account revoked server-side. Forcing logout.');
+          await logout();
+          return;
+        }
+
+        const updatedRole = resolveRole(data.role);
+        if (updatedRole !== user.role || data.name !== user.name) {
+          const freshUser: AuthUser = {
+            ...user,
+            role:       updatedRole,
+            name:       data.name       || user.name,
+            avatar_url: data.avatar_url || user.avatar_url,
+            phone:      data.phone      || user.phone,
+          };
+          setUser(freshUser);
+          await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(freshUser));
+        }
+      },
+      (error) => {
+        console.error('[AuthContext] User snapshot error:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [token, user?.id]);
+
+  // -------------------------------------------------------------------------
+  // login — called after a successful Firebase sign-in on the auth screens
+  // -------------------------------------------------------------------------
   const login = async (newToken: string, newUser: AuthUser) => {
+    lastManualLoginRef.current = Date.now();
     await AsyncStorage.setItem(STORAGE_TOKEN_KEY, newToken);
     await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);
+    setIsLoading(false);
   };
 
-  const updateUser = async (data: Partial<AuthUser>) => {
+  // -------------------------------------------------------------------------
+  // updateUser — only allows safe, non-privileged field updates
+  // -------------------------------------------------------------------------
+  const updateUser = async (data: Partial<Pick<AuthUser, 'name' | 'phone' | 'avatar_url'>>) => {
     if (!user || !token) return;
-    const res = await api.patch('/auth/me', data);
-    const nextUser = { ...user, ...res.user };
+    // Strip any keys not in the safe allowlist before sending
+    const safeData: Record<string, any> = {};
+    if (data.name       !== undefined) safeData.name       = data.name;
+    if (data.phone      !== undefined) safeData.phone      = data.phone;
+    if (data.avatar_url !== undefined) safeData.avatar_url = data.avatar_url;
+
+    const res    = await api.patch('/auth/me', safeData);
+    const nextUser: AuthUser = { ...user, ...res.user, role: resolveRole(res.user?.role) };
     await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(nextUser));
     setUser(nextUser);
   };
 
+  // -------------------------------------------------------------------------
+  // logout — signs out from all providers and clears local state
+  // -------------------------------------------------------------------------
   const logout = async () => {
     try {
       await signOut(auth);
-      try {
-        await GoogleSignin.signOut();
-      } catch (e) {
-        // May already be signed out
-      }
-      await AsyncStorage.removeItem(STORAGE_TOKEN_KEY);
-      await AsyncStorage.removeItem(STORAGE_USER_KEY);
+      try { await GoogleSignin.signOut(); } catch { /* already signed out */ }
+      await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
       setToken(null);
       setUser(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('[AuthContext] Logout error:', error);
     }
   };
 
@@ -155,4 +276,4 @@ export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
-}
+};

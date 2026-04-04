@@ -5,7 +5,7 @@ interface BrandMarkProps {
   imageScale?: number;
 }
 
-export default function BrandMark({ size = 40, imageScale = 0.68 }: BrandMarkProps) {
+export default function BrandMark({ size = 40, imageScale = 0.75 }: BrandMarkProps) {
   const imageSize = Math.round(size * imageScale);
 
   return (
