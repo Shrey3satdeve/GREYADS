@@ -7,7 +7,7 @@
     "icon": "./assets/images/splash_logo.png",
     "scheme": "greyadz-payment",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greyadz.userapp",
@@ -23,7 +23,6 @@
         "backgroundColor": "#000000"
       },
       "package": "com.greyadz.userapp",
-      "edgeToEdgeEnabled": true,
       "intentFilters": [
         {
           "action": "VIEW",
