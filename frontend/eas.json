@@ -10,8 +10,14 @@
     },
     "preview": {
       "distribution": "internal",
+      "node": "20.18.3",
       "env": {
-        "NODE_OPTIONS": "--max-old-space-size=4096"
+        "NODE_OPTIONS": "--max-old-space-size=8192",
+        "EXPO_PUBLIC_BACKEND_URL": "http://10.80.48.208:8000",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
+        "EXPO_PUBLIC_RAZORPAY_KEY_ID": "rzp_test_SWjTUdieYBRfR5",
+        "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "0",
+        "EXPO_PUBLIC_ENABLE_MANUAL_BOOKING": "1"
       }
     },
     "production": {
