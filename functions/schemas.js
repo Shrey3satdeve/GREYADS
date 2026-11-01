@@ -30,27 +30,31 @@ const PasswordResetSchema = z.object({
 });
 
 // --- Payments & Bookings ---
+const GuestSchema = z.object({
+  name: z.string().trim().min(2).max(100).transform(stripHtml),
+  age: z.string().trim().max(3).optional(),
+});
+
 const InitiatePaymentSchema = z.object({
-  amount: z.number().positive(),
   event_id: z.string().min(10),
   quantity: z.number().int().min(1).max(10),
+  guests: z.array(GuestSchema).max(10).optional(),
 });
 
 const VerifyPaymentSchema = z.object({
   razorpay_order_id: z.string().min(10),
   razorpay_payment_id: z.string().min(10),
   razorpay_signature: z.string().min(30),
-  event_id: z.string().min(10),
-  quantity: z.number().int().min(1).max(10),
-  guests: z.array(z.object({
-    name: z.string().trim().min(2).max(100).transform(stripHtml),
-    age: z.string().trim().max(3).optional(),
-  })).optional(),
+});
+
+const PaymentStatusSchema = z.object({
+  reference_id: z.string().min(10),
 });
 
 module.exports = {
   sanitizeObject,
   InitiatePaymentSchema,
   VerifyPaymentSchema,
+  PaymentStatusSchema,
   PasswordResetSchema,
 };

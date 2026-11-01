@@ -12,6 +12,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
 import BrandMark from '../../components/BrandMark';
+import { useDialog } from '../../components/AppDialog';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 
@@ -46,6 +47,7 @@ export default function DigitalTicketScreen() {
   const [downloading, setDownloading] = useState(false);
   const router = useRouter();
   const ticketRef = useRef<ViewShot>(null);
+  const { showDialog, DialogComponent } = useDialog();
 
   useEffect(() => {
     if (!id) return;
@@ -81,7 +83,7 @@ export default function DigitalTicketScreen() {
       });
 
     } catch (err: any) {
-      alert('Share failed: ' + err.message);
+      showDialog({ title: 'Share Failed', message: err?.message || 'Unable to share this ticket right now.' });
     }
   };
 
@@ -90,17 +92,17 @@ export default function DigitalTicketScreen() {
       if (!ticket || !ticketRef.current) return;
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
-        alert('Permission required to save ticket to gallery.');
+        showDialog({ title: 'Permission Required', message: 'Permission required to save ticket to gallery.' });
         return;
       }
       setDownloading(true);
       const uri = await ticketRef.current.capture?.();
       if (uri) {
         await MediaLibrary.saveToLibraryAsync(uri);
-        alert('Ticket saved to gallery successfully!');
+        showDialog({ title: 'Saved', message: 'Ticket saved to gallery successfully.' });
       }
     } catch (err: any) {
-      alert('Error saving ticket: ' + err.message);
+      showDialog({ title: 'Save Failed', message: err?.message || 'Error saving ticket.' });
     } finally {
       setDownloading(false);
     }
@@ -127,6 +129,7 @@ export default function DigitalTicketScreen() {
 
   return (
     <View style={styles.container} testID="digital-ticket-screen">
+      {DialogComponent}
       <SafeAreaView edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity testID="back-btn" style={styles.headerBtn} onPress={() => router.back()}>

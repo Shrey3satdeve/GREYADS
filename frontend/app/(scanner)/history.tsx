@@ -3,11 +3,11 @@ import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
   TouchableOpacity, Modal, ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Clock, CheckCircle, XCircle, AlertTriangle, ChevronRight, ArrowUpRight, ArrowDownLeft, X } from 'lucide-react-native';
 import { api } from '../../utils/api';
-import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { COLORS, FLOATING_TAB_BAR, RADIUS, SPACING } from '../../constants/theme';
 
 interface ScanLogItem {
   id: string;
@@ -58,6 +58,12 @@ export default function ScanHistoryScreen() {
   const [selectedBooking, setSelectedBooking] = useState<GroupedBooking | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
   const [loadingTicket, setLoadingTicket] = useState(false);
+  const insets = useSafeAreaInsets();
+  const listBottomPadding =
+    FLOATING_TAB_BAR.height +
+    FLOATING_TAB_BAR.bottomOffset +
+    insets.bottom +
+    FLOATING_TAB_BAR.contentInset;
 
   const loadHistory = useCallback(async () => {
     try {
@@ -205,7 +211,7 @@ export default function ScanHistoryScreen() {
         keyExtractor={item => item.booking_ref}
         renderItem={renderBookingRow}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22C55E" />}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: listBottomPadding }]}
         showsVerticalScrollIndicator={false}
       />
     )}
@@ -300,7 +306,7 @@ const styles = StyleSheet.create({
   loadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyText: { color: COLORS.textSecondary, fontSize: 16 },
-  list: { paddingHorizontal: 20, paddingBottom: 110, gap: 10 },
+  list: { paddingHorizontal: 20, gap: 10 },
   logCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: 14, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 2 },
   avatar: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarText: { color: '#FFF', fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },

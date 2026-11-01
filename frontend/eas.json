@@ -6,29 +6,67 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
+        "EXPO_PUBLIC_ENABLE_TEST_PHONE_AUTH": "1",
+        "EXPO_PUBLIC_ENABLE_PAYMENT_QA": "1"
+      },
+      "android": {
+        "ndk": "26.1.10909125"
+      }
     },
     "preview": {
       "distribution": "internal",
       "node": "20.18.3",
       "env": {
         "NODE_OPTIONS": "--max-old-space-size=8192",
-        "EXPO_PUBLIC_BACKEND_URL": "http://10.80.48.208:8000",
         "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
         "EXPO_PUBLIC_RAZORPAY_KEY_ID": "rzp_test_SWjTUdieYBRfR5",
         "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "0",
-        "EXPO_PUBLIC_ENABLE_MANUAL_BOOKING": "1"
+        "EXPO_PUBLIC_ENABLE_MANUAL_BOOKING": "1",
+        "EXPO_PUBLIC_ENABLE_TEST_PHONE_AUTH": "1",
+        "EXPO_PUBLIC_ENABLE_PAYMENT_QA": "1"
+      },
+      "android": {
+        "ndk": "26.1.10909125"
       }
     },
     "production": {
       "autoIncrement": true,
       "distribution": "store",
+      "node": "20.18.3",
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=8192",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com"
+      },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "ndk": "26.1.10909125"
       }
     },
     "local-release": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
+        "EXPO_PUBLIC_ENABLE_TEST_PHONE_AUTH": "0",
+        "EXPO_PUBLIC_ENABLE_PAYMENT_QA": "0",
+        "EXPO_PUBLIC_ENABLE_MANUAL_BOOKING": "0",
+        "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "0"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "local-qa": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
+        "EXPO_PUBLIC_ENABLE_TEST_PHONE_AUTH": "1",
+        "EXPO_PUBLIC_ENABLE_PAYMENT_QA": "1",
+        "EXPO_PUBLIC_ENABLE_MANUAL_BOOKING": "1",
+        "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "1"
+      },
       "android": {
         "buildType": "apk"
       }

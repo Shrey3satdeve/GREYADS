@@ -15,7 +15,6 @@ export default function AdminLayout() {
       <Tabs.Screen name="events/index" options={{ tabBarIcon: ({ color }) => <Calendar size={20} color={color} strokeWidth={2.1} /> }} />
       <Tabs.Screen name="analytics" options={{ tabBarIcon: ({ color }) => <TrendingUp size={20} color={color} strokeWidth={2.1} /> }} />
       <Tabs.Screen name="users" options={{ tabBarIcon: ({ color }) => <Users size={20} color={color} strokeWidth={2.1} /> }} />
-      <Tabs.Screen name="login" options={{ href: null }} />
       <Tabs.Screen name="events/create" options={{ href: null }} />
     </Tabs>
   );

@@ -5,24 +5,30 @@ buildscript {
         buildToolsVersion = findProperty('android.buildToolsVersion') ?: '35.0.0'
         minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
         compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
-        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
+        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '35')
         kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
-
-        ndkVersion = "26.1.10909125"
+        ndkVersion = findProperty('android.ndkVersion') ?: '26.1.10909125'
     }
     repositories {
         google()
         mavenCentral()
+        gradlePluginPortal()
     }
     dependencies {
         classpath 'com.google.gms:google-services:4.4.1'
         classpath('com.android.tools.build:gradle:8.6.1')
         classpath('com.facebook.react:react-native-gradle-plugin')
-        classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+        classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25')
     }
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+ext {
+    // Keep third-party Android libraries pointed at the actual React Native package.
+    // Some packages read this value directly when resolving ReactAndroid metadata.
+    REACT_NATIVE_NODE_MODULES_DIR = file("../node_modules/react-native").absolutePath
+}
 
 allprojects {
     repositories {
@@ -37,6 +43,7 @@ allprojects {
 
         google()
         mavenCentral()
+        gradlePluginPortal()
         maven { url 'https://www.jitpack.io' }
     }
 }

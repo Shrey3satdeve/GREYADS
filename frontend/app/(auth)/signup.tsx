@@ -13,14 +13,11 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../../utils/firebase';
 import { useDialog } from '../../components/AppDialog';
 import rnfbAuth from '@react-native-firebase/auth';
+import { configureGoogleSignin, getGoogleIdToken, getGoogleSignInErrorMessage } from '../../utils/googleSignIn';
 
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID, // MUST be a Web Client ID, not an Android Client ID, to get idToken
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // Only needed if you add iOS later
-});
+configureGoogleSignin();
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
@@ -37,46 +34,33 @@ export default function SignupScreen() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
-      await GoogleSignin.hasPlayServices();
-      
-      // Try silent sign-in first for "direct" login experience
-      let response;
-      try {
-        response = await GoogleSignin.signInSilently();
-      } catch (e) {
-        // If silent fails, do regular sign-in
-        response = await GoogleSignin.signIn();
-      }
-      
-      if (response.type === 'cancelled') {
-        throw { code: 'SIGN_IN_CANCELLED' };
+      const { cancelled, idToken } = await getGoogleIdToken();
+      if (cancelled) {
+        return;
       }
 
-      const idToken = response.data?.idToken;
-      
-      let credentialToken = idToken;
-      if (!credentialToken) {
-        const tokens = await GoogleSignin.getTokens();
-        credentialToken = tokens.idToken;
-      }
-      
-      if (!credentialToken) {
-        throw new Error("No idToken found after sign-in");
-      }
-      
-      const credential = rnfbAuth.GoogleAuthProvider.credential(credentialToken);
+      const credential = rnfbAuth.GoogleAuthProvider.credential(idToken);
       const userCreds = await rnfbAuth().signInWithCredential(credential);
       const fbIdToken = await userCreds.user.getIdToken(true);
-      
-      await AsyncStorage.setItem('greyads_token', fbIdToken);
-      
-      const data = await api.get('/auth/me');
-      await login(fbIdToken, data.user);
+      const data = await api.post('/auth/google', { role: 'user' }, false);
+      const authUser = data?.user || {
+        id: userCreds.user.uid,
+        name: userCreds.user.displayName || 'User',
+        email: userCreds.user.email || '',
+        role: 'user',
+        avatar_url: userCreds.user.photoURL || undefined,
+        phone: userCreds.user.phoneNumber || undefined,
+      };
+
+      await AsyncStorage.setItem('greyads_token', data?.token || fbIdToken);
+
+      await login(data?.token || fbIdToken, authUser);
       router.replace('/(tabs)');
     } catch (err: any) {
       console.log('Google Sign-In Error:', err);
-      if (err.code !== 'SIGN_IN_CANCELLED') {
-         showDialog({ title: 'Google Sign-In Failed', message: err.message || 'Could not sign in with Google' });
+      const message = getGoogleSignInErrorMessage(err);
+      if (message) {
+        showDialog({ title: 'Google Sign-In Failed', message });
       }
     } finally {
       setGoogleLoading(false);
@@ -126,7 +110,7 @@ export default function SignupScreen() {
       showDialog({
         title: 'Verify Your Email',
         message: `A verification link has been sent to ${email.trim().toLowerCase()}. Please check your inbox and verify your email before logging in.`,
-        buttons: [{ label: 'Go to Login', style: 'default', onPress: () => router.replace('/(auth)' as any) }],
+        buttons: [{ label: 'Go to Login', style: 'default', onPress: () => router.replace('/(auth)/login' as any) }],
       });
     } catch (err: any) {
       console.error('[Signup]', err.code, err.message);
@@ -258,7 +242,7 @@ export default function SignupScreen() {
               )}
             </TouchableOpacity>
 
-          <TouchableOpacity testID="go-to-login-btn" onPress={() => router.back()} style={styles.linkRow}>
+          <TouchableOpacity testID="go-to-login-btn" onPress={() => router.replace('/(auth)/login' as any)} style={styles.linkRow}>
             <Text style={styles.linkText}>Already have an account? <Text style={styles.linkAccent}>Sign In</Text></Text>
           </TouchableOpacity>
         </ScrollView>

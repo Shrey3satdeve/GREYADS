@@ -13,205 +13,104 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import Svg, { Path } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowRight, Eye, EyeOff } from 'lucide-react-native';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import rnfbAuth, { sendPasswordResetEmail } from '@react-native-firebase/auth';
-import { auth } from '../../utils/firebase';
+import rnfbAuth from '@react-native-firebase/auth';
 import BrandMark from '../../components/BrandMark';
 import { useDialog } from '../../components/AppDialog';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../utils/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-});
-
+import { configureGoogleSignin, getGoogleIdToken, getGoogleSignInErrorMessage } from '../../utils/googleSignIn';
 
 const { width } = Dimensions.get('window');
 const TABS = ['USER', 'STAFF', 'ADMIN'] as const;
+const USER_AUTH_TABS = ['EMAIL', 'OTP'] as const;
 const ENABLE_DEMO_LOGIN = process.env.EXPO_PUBLIC_ENABLE_DEMO_LOGIN === '1';
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+const ENABLE_TEST_PHONE_AUTH = __DEV__ || process.env.EXPO_PUBLIC_ENABLE_TEST_PHONE_AUTH === '1';
+const ENABLE_OTP_RECAPTCHA_RETRY = Platform.OS === 'android' && !ENABLE_TEST_PHONE_AUTH;
 
 type RoleType = 'user' | 'staff' | 'admin';
+type UserAuthMode = 'email' | 'otp';
 
-// Demo mode: only pre-fills the email address, never the password.
-// Credentials are never hardcoded in the bundle.
-const DEMO_EMAILS: Record<Exclude<RoleType, 'user'>, string> = {
-  admin: 'admin@greyads.com',
-  staff: 'staff@greyads.com',
+const DEMO_CREDENTIALS: Record<Exclude<RoleType, 'user'>, { email: string; password: string }> = {
+  admin: { email: 'greyadz01@gmail.com', password: 'Barfi@4' },
+  staff: { email: 'staff@greyadz.com', password: 'Staff@123' },
 };
 
-// Client-side rate limiting — 5 failures triggers a 30-second lockout.
-const MAX_ATTEMPTS  = 5;
-const LOCKOUT_MS    = 30_000;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+configureGoogleSignin();
+
+const isTransientProfileError = (error: any) => {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  return (
+    code.includes('unavailable') ||
+    message.includes('service is currently unavailable') ||
+    message.includes("backend didn't respond") ||
+    message.includes('network request failed') ||
+    message.includes('timed out')
+  );
+};
+
+const isAndroidOtpVerificationBootstrapError = (error: any) => {
+  const rawMessage = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  const combined = `${code} ${rawMessage}`;
+
+  return (
+    combined.includes('missing-client-identifier') ||
+    combined.includes('play integrity') ||
+    combined.includes('app verification') ||
+    combined.includes('recaptcha')
+  );
+};
 
 export default function LoginScreen() {
+  const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<RoleType>('user');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const [otpBanner, setOtpBanner] = useState('');
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [loginLocked, setLoginLocked] = useState(false);
-  const [lockCountdown, setLockCountdown] = useState(0);
-  const failedAttemptsRef = useRef(0);
-  const lockTimerRef      = useRef<any>(null);
-  const lockIntervalRef   = useRef<any>(null);
-  const confirmationResult = useRef<any>(null);
-  const otpTimeout = useRef<any>(null);
-  const otpInputRef = useRef<TextInput>(null);
-  const resendInterval = useRef<any>(null);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [confirmation, setConfirmation] = useState<any>(null);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const [selectedRole, setSelectedRole] = useState<RoleType>('user');
+  const [userAuthMode, setUserAuthMode] = useState<UserAuthMode>('email');
   const router = useRouter();
   const { login } = useAuth();
   const { showDialog, DialogComponent } = useDialog();
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    try {
-      // Store the desired role so AuthContext can provision it correctly if the user is new
-      await AsyncStorage.setItem('pending_role', selectedRole);
-      
-      await GoogleSignin.hasPlayServices();
-      const { data: responseData } = await GoogleSignin.signIn();
-      
-      const idToken = responseData?.idToken;
-      if (!idToken) throw new Error("No ID Token found");
-
-      const credential = rnfbAuth.GoogleAuthProvider.credential(idToken);
-      const userCreds = await rnfbAuth().signInWithCredential(credential);
-      const fbIdToken = await userCreds.user.getIdToken(true);
-
-      const data: any = await api.post('/auth/google', { access_token: fbIdToken, role: selectedRole });
-      await login(fbIdToken, data.user);
-
-      if (data.user.role === 'admin') {
-        router.replace('/(admin)');
-      } else if (data.user.role === 'staff') {
-        router.replace('/(scanner)');
-      } else {
-        router.replace('/(tabs)');
-      }
-    } catch (err: any) {
-      if (err.code !== 'SIGN_IN_CANCELLED') {
-        showDialog({ title: 'Google Sign-In Failed', message: err.message || 'Could not sign in with Google' });
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
-  // -------------------------------------------------------
-  // Phone OTP — uses @react-native-firebase/auth natively.
-  // Android handles attestation via Play Integrity;
-  // no reCAPTCHA or WebView required.
-  // -------------------------------------------------------
-  const startResendCountdown = () => {
-    setResendCooldown(60);
-    if (resendInterval.current) clearInterval(resendInterval.current);
-    resendInterval.current = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearInterval(resendInterval.current);
-          resendInterval.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  const handleSendOTP = async (isResend = false) => {
-    const cleaned = phoneNumber.replace(/\D/g, '');
-    if (!cleaned) {
-      showDialog({ title: 'Missing Field', message: 'Please enter your phone number.' });
-      return;
-    }
-    if (cleaned.length !== 10) {
-      showDialog({ title: 'Invalid Format', message: 'Please enter a 10-digit number.' });
-      return;
-    }
-
-    setLoading(true);
-    setOtpBanner('');
-    if (isResend) setOtp('');
-    await AsyncStorage.setItem('pending_role', selectedRole);
-
-    // 30-second guard so the button never freezes forever
-    otpTimeout.current = setTimeout(() => {
-      setLoading(false);
-      showDialog({ title: 'Timeout', message: 'OTP request timed out. Please check your connection and try again.' });
-    }, 30000);
-
-    try {
-      const result = await rnfbAuth().signInWithPhoneNumber('+91' + cleaned);
-      clearTimeout(otpTimeout.current!);
-      otpTimeout.current = null;
-      confirmationResult.current = result;
-      // Flip to OTP screen immediately — no dialog to dismiss
-      setOtpSent(true);
-      setLoading(false);
-      setOtpBanner(`OTP sent to +91 xxxxxxxx${cleaned.slice(-2)} ✓`);
-      startResendCountdown();
-      // Auto-focus OTP input quickly
-      setTimeout(() => { otpInputRef.current?.focus(); }, 100);
-    } catch (err: any) {
-      clearTimeout(otpTimeout.current!);
-      otpTimeout.current = null;
-      setLoading(false);
-      showDialog({ title: 'Failed to Send OTP', message: err.message || 'Please try again.' });
-    }
-  };
-
-  const handleVerifyOTP = async () => {
-    if (!otp.trim()) {
-      showDialog({ title: 'Missing Field', message: 'Please enter the OTP.' });
-      return;
-    }
-    if (!confirmationResult.current) {
-      showDialog({ title: 'Session Expired', message: 'Please request a new OTP.' });
-      return;
-    }
-    setLoading(true);
-    try {
-      // Confirm with native SDK
-      const result = await confirmationResult.current.confirm(otp);
-      
-      // Get an ID token from the native auth result
-      const idToken = await result?.user?.getIdToken();
-      if (!idToken) throw new Error("Could not retrieve authentication token.");
-      const res: any = await api.post('/auth/login', { access_token: idToken, role: selectedRole });
-      await login(idToken, res.user);
-    } catch (err: any) {
-      setLoading(false);
-      const msg = err.code === 'auth/invalid-verification-code'
-        ? 'Incorrect OTP. Please check and try again.'
-        : (err.message || 'Verification failed. Please try again.');
-      showDialog({ title: 'Invalid OTP', message: msg });
-    }
-  };
-
-
-
-
   const horizontalPadding = 32;
   const pillPadding = 8;
   const availableWidth = width - (horizontalPadding * 2) - pillPadding;
-  const buttonWidth = availableWidth / TABS.length;
+  const buttonWidth = availableWidth / 3;
+  const postLoginRedirect = Array.isArray(redirect) ? redirect[0] : redirect;
+
+  const redirectToRequestedScreen = (role: RoleType | string) => {
+    if (role !== 'user') {
+      return false;
+    }
+
+    if (!postLoginRedirect || !postLoginRedirect.startsWith('/') || postLoginRedirect.startsWith('//')) {
+      return false;
+    }
+
+    router.replace(postLoginRedirect as any);
+    return true;
+  };
 
   useEffect(() => {
     let toValue = 0;
     if (selectedRole === 'staff') toValue = 1;
-    if (selectedRole === 'admin') toValue = 2;
     if (selectedRole === 'admin') toValue = 2;
 
     Animated.timing(slideAnim, {
@@ -221,70 +120,231 @@ export default function LoginScreen() {
     }).start();
   }, [selectedRole, slideAnim]);
 
-  // Rate limiter — called after each failed email/password attempt
-  const recordFailedAttempt = () => {
-    failedAttemptsRef.current += 1;
-    if (failedAttemptsRef.current >= MAX_ATTEMPTS) {
-      setLoginLocked(true);
-      setLockCountdown(LOCKOUT_MS / 1000);
-      if (lockIntervalRef.current) clearInterval(lockIntervalRef.current);
-      lockIntervalRef.current = setInterval(() => {
-        setLockCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(lockIntervalRef.current);
-            setLoginLocked(false);
-            failedAttemptsRef.current = 0;
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+  useEffect(() => {
+    if (selectedRole === 'user' && userAuthMode === 'otp') {
+      return;
     }
+
+    setOtp('');
+    setOtpSent(false);
+    setSendingOtp(false);
+    setVerifyingOtp(false);
+    setOtpCountdown(0);
+    setConfirmation(null);
+
+    if (selectedRole !== 'user') {
+      setUserAuthMode('email');
+    }
+  }, [selectedRole, userAuthMode]);
+
+  useEffect(() => {
+    if (otpCountdown <= 0) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setOtpCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [otpCountdown]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    try {
+      rnfbAuth().settings.appVerificationDisabledForTesting = ENABLE_TEST_PHONE_AUTH;
+      rnfbAuth().settings.forceRecaptchaFlowForTesting = !ENABLE_TEST_PHONE_AUTH;
+    } catch (error) {
+      console.warn('[Auth] Unable to configure Android phone auth testing:', error);
+    }
+  }, []);
+
+  const fillDemoCredentials = (role: Exclude<RoleType, 'user'>) => {
+    const creds = DEMO_CREDENTIALS[role];
+    setSelectedRole(role);
+    setEmail(creds.email);
+    setPassword(creds.password);
   };
 
-  // Demo mode: pre-fills only the email, never the password
-  const fillDemoCredentials = (role: Exclude<RoleType, 'user'>) => {
-    setSelectedRole(role);
-    setEmail(DEMO_EMAILS[role]);
-    setPassword(''); // Never pre-fill passwords
+  const getOtpFailureMessage = (error: any) => {
+    const rawMessage = String(error?.message || '').trim();
+    const normalized = rawMessage.toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    const combined = `${code} ${normalized}`;
+
+    if (ENABLE_TEST_PHONE_AUTH) {
+      return rawMessage || 'Test phone auth is enabled. Use a Firebase-whitelisted test number and OTP from the Firebase console.';
+    }
+
+    if (
+      combined.includes('session-expired') ||
+      combined.includes('code:39') ||
+      combined.includes('internal error has occurred')
+    ) {
+      return 'This OTP session expired. Tap Resend OTP, wait for the fresh code, and then verify again.';
+    }
+
+    if (
+      combined.includes('invalid-verification-code') ||
+      combined.includes('invalid code')
+    ) {
+      return 'The OTP you entered is invalid. Please check the latest SMS code and try again.';
+    }
+
+    if (
+      Platform.OS === 'android' &&
+      (
+        normalized.includes('recaptcha') ||
+        normalized.includes('captcha') ||
+        normalized.includes('app verification') ||
+        normalized.includes('missing initial state')
+      )
+    ) {
+      return 'Android OTP is falling back to Google verification for this build. To avoid the browser challenge, add the app\'s release SHA-1 and SHA-256 in Firebase and test from a Play-distributed build.';
+    }
+
+    return rawMessage || 'Could not send OTP. Please try again.';
+  };
+
+  const finishRoleLogin = async (role: RoleType, firebaseUser: any, endpoint: '/auth/login' | '/auth/google' = '/auth/login') => {
+    const data = await api.post(
+      endpoint,
+      { role },
+      false,
+    );
+
+    const idToken = data?.token || await firebaseUser.getIdToken(true);
+    await login(idToken, data.user);
+    // RootRedirect owns role-based navigation so we do not dispatch overlapping replaces from auth screens.
+    redirectToRequestedScreen(data.user.role);
   };
 
   const handleForgotPassword = async () => {
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) {
-      showDialog({ title: 'Email Required', message: 'Enter your email address above, then tap Forgot Password.' });
+    if (!email.trim()) {
+      showDialog({
+        title: 'Email Required',
+        message: 'Please enter your email address to reset your password.',
+      });
       return;
     }
-    setLoading(true);
+
     try {
-      // Firebase sends a time-limited reset link (expires in 1 hour)
-      await sendPasswordResetEmail(rnfbAuth(), trimmedEmail);
+      await rnfbAuth().sendPasswordResetEmail(email.trim().toLowerCase());
       showDialog({
-        title: 'Reset Email Sent',
-        // Deliberately vague — do not confirm whether the email exists.
-        message: 'If an account exists for that email, a password reset link has been sent. Check your inbox (and spam folder).',
+        title: 'Password Reset',
+        message: 'Password reset email sent. Check your inbox and spam folder.',
       });
     } catch (err: any) {
-      // Same generic message regardless of error — prevents email enumeration.
+      const code = String(err?.code || '');
+      if (code.includes('invalid-email')) {
+        showDialog({
+          title: 'Invalid Email',
+          message: 'Please enter a valid email address.',
+        });
+        return;
+      }
+
       showDialog({
-        title: 'Reset Email Sent',
-        message: 'If an account exists for that email, a password reset link has been sent.',
+        title: 'Password Reset',
+        message: 'If this email is registered, a reset link has been sent.',
       });
-    } finally {
-      setLoading(false);
     }
   };
 
+  const handleSendOtp = async () => {
+    const cleanedPhone = phoneNumber.replace(/\D/g, '').slice(0, 10);
+    if (cleanedPhone.length !== 10) {
+      showDialog({ title: 'Invalid Number', message: 'Please enter a valid 10-digit phone number.' });
+      return;
+    }
 
-
-  const handleLogin = async () => {
-    if (loginLocked) {
+    if (otpCountdown > 0 && otpSent) {
       showDialog({
-        title: 'Too Many Attempts',
-        message: `Too many failed login attempts. Please wait ${lockCountdown} seconds and try again.`,
+        title: 'Wait a Moment',
+        message: `Please wait ${otpCountdown}s before requesting another OTP.`,
       });
       return;
     }
+
+    setSendingOtp(true);
+    setOtp('');
+    setOtpSent(false);
+    setConfirmation(null);
+    try {
+      if (Platform.OS === 'android') {
+        rnfbAuth().settings.appVerificationDisabledForTesting = ENABLE_TEST_PHONE_AUTH;
+        rnfbAuth().settings.forceRecaptchaFlowForTesting = !ENABLE_TEST_PHONE_AUTH;
+      }
+
+      const result = await rnfbAuth().signInWithPhoneNumber(`+91${cleanedPhone}`);
+      setConfirmation(result);
+      setOtpSent(true);
+      setOtpCountdown(30);
+      showDialog({ title: 'OTP Sent', message: 'A verification code has been sent to your phone.' });
+    } catch (err: any) {
+      if (ENABLE_OTP_RECAPTCHA_RETRY && !ENABLE_TEST_PHONE_AUTH && isAndroidOtpVerificationBootstrapError(err)) {
+        try {
+          rnfbAuth().settings.forceRecaptchaFlowForTesting = true;
+          const retryResult = await rnfbAuth().signInWithPhoneNumber(`+91${cleanedPhone}`);
+          setConfirmation(retryResult);
+          setOtpSent(true);
+          setOtpCountdown(30);
+          showDialog({ title: 'OTP Sent', message: 'Verification switched to secure browser fallback. Enter the OTP to continue.' });
+          return;
+        } catch (retryError: any) {
+          showDialog({
+            title: 'OTP Failed',
+            message: getOtpFailureMessage(retryError),
+          });
+          return;
+        }
+      }
+
+      showDialog({
+        title: 'OTP Failed',
+        message: getOtpFailureMessage(err),
+      });
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!confirmation) {
+      showDialog({ title: 'OTP Required', message: 'Please send the OTP first.' });
+      return;
+    }
+
+    if (otp.trim().length !== 6) {
+      showDialog({ title: 'Invalid OTP', message: 'Please enter the 6-digit code.' });
+      return;
+    }
+
+    setVerifyingOtp(true);
+    try {
+      const userCred = await confirmation.confirm(otp.trim());
+      await finishRoleLogin('user', userCred.user, '/auth/login');
+    } catch (err: any) {
+      const message = getOtpFailureMessage(err);
+      if (message.toLowerCase().includes('expired')) {
+        setConfirmation(null);
+        setOtpSent(false);
+        setOtp('');
+        setOtpCountdown(0);
+      }
+      showDialog({
+        title: 'OTP Verification Failed',
+        message,
+      });
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       showDialog({ title: 'Missing Fields', message: 'Please enter your email and password.' });
       return;
@@ -292,67 +352,140 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const userCreds = await rnfbAuth().signInWithEmailAndPassword(
-        email.trim().toLowerCase(),
-        password
-      );
+      const normalizedEmail = email.trim().toLowerCase();
+      const credential = await rnfbAuth().signInWithEmailAndPassword(normalizedEmail, password);
+      await credential.user.reload();
+      const firebaseUser = rnfbAuth().currentUser || credential.user;
+      const isEmailPasswordUser = firebaseUser.providerData?.some((provider) => provider?.providerId === 'password');
 
-      // Enforce email verification for email/password accounts
-      if (!userCreds.user.emailVerified) {
+      if (selectedRole === 'user' && isEmailPasswordUser && !firebaseUser.emailVerified) {
         await rnfbAuth().signOut();
         showDialog({
           title: 'Email Not Verified',
-          message: 'Please verify your email address before logging in. Check your inbox for a verification link or request a new one.',
-          buttons: [
-            {
-              label: 'Resend Email',
-              style: 'default',
-              onPress: async () => {
-                try {
-                  await userCreds.user.sendEmailVerification();
-                  showDialog({ title: 'Sent', message: 'Verification email resent. Check your inbox.' });
-                } catch { /* ignore */ }
-              },
-            },
-          ],
+          message: 'Please verify your email before signing in.',
         });
         return;
       }
 
-      const fbIdToken = await userCreds.user.getIdToken(true);
-      const data: any = await api.post('/auth/login', {
-        email: email.trim().toLowerCase(),
-        role: selectedRole,
-      });
+      let data: any;
+      try {
+        data = await api.post(
+          '/auth/login',
+          {
+            role: selectedRole,
+          },
+          false,
+        );
+      } catch (profileErr: any) {
+        if (isTransientProfileError(profileErr)) {
+          await sleep(1200);
+          try {
+            data = await api.post(
+              '/auth/login',
+              {
+                role: selectedRole,
+              },
+              false,
+            );
+          } catch (retryErr: any) {
+            if (selectedRole === 'user' && isTransientProfileError(retryErr)) {
+              const fallbackToken = await firebaseUser.getIdToken();
+              const fallbackUser = {
+                id: firebaseUser.uid,
+                name: firebaseUser.displayName || 'User',
+                email: firebaseUser.email || normalizedEmail,
+                role: 'user' as const,
+                avatar_url: firebaseUser.photoURL || undefined,
+                phone: firebaseUser.phoneNumber || undefined,
+              };
 
-      // Successful login — reset failure counter
-      failedAttemptsRef.current = 0;
-      await login(fbIdToken, data.user);
+              await login(fallbackToken, fallbackUser);
+              redirectToRequestedScreen(fallbackUser.role);
+              return;
+            }
 
-      if (data.user.role === 'admin') {
-        router.replace('/(admin)');
-      } else if (data.user.role === 'staff') {
-        router.replace('/(scanner)');
-      } else {
-        router.replace('/(tabs)');
+            throw retryErr;
+          }
+        } else {
+          throw profileErr;
+        }
       }
-    } catch (err: any) {
-      recordFailedAttempt();
-      const remaining = MAX_ATTEMPTS - failedAttemptsRef.current;
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+
+      if (selectedRole === 'admin' && data.user.role !== 'admin') {
+        await rnfbAuth().signOut();
         showDialog({
-          title: 'Login Failed',
-          message: remaining > 0
-            ? `Invalid email or password. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
-            : 'Account temporarily locked due to repeated failures.',
+          title: 'Access Denied',
+          message: 'This account does not have Admin privileges.',
         });
-      } else if (err.code === 'auth/too-many-requests') {
-        showDialog({ title: 'Blocked by Firebase', message: 'Too many requests. Please wait a few minutes before trying again.' });
-      } else {
-        showDialog({ title: 'Login Failed', message: err.message || 'Something went wrong.' });
+        return;
       }
+      if (selectedRole === 'staff' && data.user.role !== 'staff' && data.user.role !== 'admin') {
+        await rnfbAuth().signOut();
+        showDialog({
+          title: 'Access Denied',
+          message: 'This account does not have Staff privileges.',
+        });
+        return;
+      }
+      if (selectedRole === 'user' && data.user.role !== 'user') {
+        await rnfbAuth().signOut();
+        showDialog({
+          title: 'Access Denied',
+          message: 'Please switch to the correct role before signing in.',
+        });
+        return;
+      }
+
+      const idToken = data?.token || await firebaseUser.getIdToken(true);
+      await login(idToken, data.user);
+      redirectToRequestedScreen(data.user.role);
+    } catch (err: any) {
+      const code = err?.code || '';
+      let message = err?.message || 'Invalid credentials';
+
+      if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) {
+        message = 'Invalid email or password.';
+      } else if (code.includes('invalid-email')) {
+        message = 'Please enter a valid email address.';
+      } else if (code.includes('too-many-requests')) {
+        message = 'Too many login attempts. Please wait a moment and try again.';
+      }
+
+      showDialog({ title: 'Login Failed', message });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (selectedRole !== 'user') {
+      showDialog({
+        title: 'Google Sign-In',
+        message: 'Continue with Google is available only for user accounts.',
+      });
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      const { cancelled, idToken } = await getGoogleIdToken();
+      if (cancelled) {
+        return;
+      }
+
+      const credential = rnfbAuth.GoogleAuthProvider.credential(idToken);
+      const userCreds = await rnfbAuth().signInWithCredential(credential);
+      const firebaseUser = userCreds.user;
+
+      await finishRoleLogin('user', firebaseUser, '/auth/google');
+    } catch (err: any) {
+      const message = getGoogleSignInErrorMessage(err);
+      if (!message) {
+        return;
+      }
+      showDialog({ title: 'Google Sign-In Failed', message });
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -360,24 +493,31 @@ export default function LoginScreen() {
     inputRange: [0, 1, 2],
     outputRange: [0, buttonWidth, buttonWidth * 2],
   });
+  const isUserOtpMode = selectedRole === 'user' && userAuthMode === 'otp';
+  const shouldShowCredentialFields = selectedRole !== 'user' || userAuthMode === 'email';
+  const otpSubText = ENABLE_TEST_PHONE_AUTH
+    ? 'Testing mode is enabled. Use a Firebase-whitelisted test phone number and OTP.'
+    : Platform.OS === 'android'
+      ? 'Android may open Google verification in the browser on sideloaded builds.'
+      : 'Use your mobile number to receive a secure one-time code.';
 
   return (
     <SafeAreaView style={styles.safe}>
+      {DialogComponent}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <View style={styles.logoPill}>
-              <BrandMark size={36} imageScale={0.65} />
-              <View style={styles.logoPillTextContainer}>
-                <Text style={styles.logoPillTextWhite}>GREY</Text>
-                <Text style={styles.logoPillTextGrey}>ADZ</Text>
-              </View>
+            <View style={styles.branding}>
+              <BrandMark size={44} />
+              <Text style={styles.logoText}>
+                GREY<Text style={{ color: '#71717A' }}>ADZ</Text>
+              </Text>
             </View>
           </View>
 
           <View style={styles.hero}>
             <Text style={styles.heading}>
-              {selectedRole === 'user' ? 'Welcome' : 'Restricted Access'}
+              {selectedRole === 'user' ? 'Welcome Back' : 'Restricted Access'}
             </Text>
             <Text style={styles.subheading}>
               {selectedRole === 'user'
@@ -410,148 +550,194 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <View style={styles.form}>
-            {(selectedRole === 'admin' || selectedRole === 'staff') ? (
-              <>
-                <View style={styles.field}>
-                  <Text style={styles.label}>EMAIL ADDRESS</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="yours@example.com"
-                    placeholderTextColor="#3F3F46"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>PASSWORD</Text>
-                  <View style={styles.passwordWrap}>
-                    <TextInput
-                      style={styles.passwordInput}
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder="••••••••"
-                      placeholderTextColor="#3F3F46"
-                      secureTextEntry={!showPw}
-                    />
-                    <TouchableOpacity onPress={() => setShowPw(!showPw)} style={styles.eyeBtn}>
-                      {showPw ? <Eye size={18} color="#71717A" /> : <EyeOff size={18} color="#71717A" />}
+          {selectedRole === 'user' && (
+            <View style={styles.userModeContainer}>
+              <Text style={styles.roleLabel}>SIGN IN WITH</Text>
+              <View style={styles.userModeTabs}>
+                {USER_AUTH_TABS.map((tab) => {
+                  const mode = tab.toLowerCase() as UserAuthMode;
+                  const isActive = userAuthMode === mode;
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      style={[styles.userModeTab, isActive && styles.userModeTabActive]}
+                      onPress={() => setUserAuthMode(mode)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.userModeTabText, isActive && styles.userModeTabTextActive]}>
+                        {tab}
+                      </Text>
                     </TouchableOpacity>
-                  </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
 
-                  <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPwBtn}>
-                    <Text style={styles.forgotPwText}>Forgot Password?</Text>
+          <View style={styles.form}>
+            {shouldShowCredentialFields && (
+              <View style={styles.field}>
+                <Text style={styles.label}>EMAIL ADDRESS</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="yours@example.com"
+                  placeholderTextColor="#3F3F46"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                />
+              </View>
+            )}
+
+            {isUserOtpMode && (
+              <View style={styles.inlineAuthCard}>
+                <Text style={styles.otpTitle}>Sign in with OTP</Text>
+                <Text style={styles.otpSub}>{otpSubText}</Text>
+                <View style={styles.phoneRow}>
+                  <TextInput
+                    style={[styles.input, styles.phoneInput]}
+                    value={phoneNumber}
+                    onChangeText={(value) => {
+                      setPhoneNumber(value.replace(/\D/g, '').slice(0, 10));
+                      if (otpSent || confirmation) {
+                        setOtp('');
+                        setOtpSent(false);
+                        setConfirmation(null);
+                      }
+                    }}
+                    placeholder="9876543210"
+                    placeholderTextColor="#3F3F46"
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                    maxLength={10}
+                  />
+                  <TouchableOpacity
+                    style={[styles.otpActionBtn, (sendingOtp || verifyingOtp || otpCountdown > 0) && { opacity: 0.7 }]}
+                    onPress={handleSendOtp}
+                    disabled={sendingOtp || verifyingOtp || otpCountdown > 0}
+                    activeOpacity={0.9}
+                  >
+                    {sendingOtp ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <Text style={styles.otpActionBtnText}>
+                        {otpSent ? (otpCountdown > 0 ? `RESEND ${otpCountdown}s` : 'RESEND') : 'SEND OTP'}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 </View>
+                {Platform.OS === 'android' && !ENABLE_TEST_PHONE_AUTH && (
+                  <Text style={styles.otpHint}>
+                    Browser-free Android OTP requires the app&apos;s release SHA-1 and SHA-256 in Firebase and a Play-distributed build.
+                  </Text>
+                )}
+                {Platform.OS === 'android' && ENABLE_TEST_PHONE_AUTH && (
+                  <Text style={styles.otpHint}>
+                    Test phone auth is enabled for this build. Use a Firebase test number so OTP stays inside the app and does not open the browser challenge.
+                  </Text>
+                )}
+                {otpSent && (
+                  <View style={styles.field}>
+                    <Text style={styles.label}>ENTER OTP</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={otp}
+                      onChangeText={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="6-digit code"
+                      placeholderTextColor="#3F3F46"
+                      keyboardType="number-pad"
+                      autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
+                      textContentType="oneTimeCode"
+                      maxLength={6}
+                    />
+                  </View>
+                )}
+              </View>
+            )}
 
-                <TouchableOpacity
-                  style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
-                  onPress={handleLogin}
-                  disabled={loading}
-                  activeOpacity={0.9}
-                  accessibilityRole="button"
-                  accessibilityLabel="SIGN IN"
-                >
-                  {loading ? (
+            {shouldShowCredentialFields && (
+              <View style={styles.field}>
+              <Text style={styles.label}>PASSWORD</Text>
+              <View style={styles.passwordWrap}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#3F3F46"
+                  secureTextEntry={!showPw}
+                />
+                <TouchableOpacity onPress={() => setShowPw(!showPw)} style={styles.eyeBtn}>
+                  {showPw ? <Eye size={18} color="#71717A" /> : <EyeOff size={18} color="#71717A" />}
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity onPress={() => { void handleForgotPassword(); }} style={styles.forgotPwBtn}>
+                <Text style={styles.forgotPwText}>Forgot Password?</Text>
+              </TouchableOpacity>
+              </View>
+            )}
+
+            {(!isUserOtpMode || otpSent) && (
+              <TouchableOpacity
+                style={[styles.primaryBtn, (isUserOtpMode ? verifyingOtp : loading) && { opacity: 0.7 }]}
+                onPress={isUserOtpMode ? handleVerifyOtp : handleLogin}
+                disabled={isUserOtpMode ? verifyingOtp : loading}
+                activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel={isUserOtpMode ? 'VERIFY OTP' : 'SIGN IN'}
+              >
+                {isUserOtpMode ? (
+                  verifyingOtp ? (
                     <ActivityIndicator color="#000" />
                   ) : (
                     <>
-                      <Text style={styles.primaryBtnText}>SIGN IN</Text>
+                      <Text style={styles.primaryBtnText}>VERIFY OTP</Text>
                       <ArrowRight size={18} color="#000" strokeWidth={2.5} />
+                    </>
+                  )
+                ) : loading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <>
+                    <Text style={styles.primaryBtnText}>SIGN IN</Text>
+                    <ArrowRight size={18} color="#000" strokeWidth={2.5} />
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {selectedRole === 'user' && (
+              <>
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.googleBtn, googleLoading && { opacity: 0.6 }]}
+                  onPress={handleGoogleLogin}
+                  disabled={googleLoading}
+                  activeOpacity={0.9}
+                >
+                  {googleLoading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <>
+                      <Image
+                        source="https://www.gstatic.com/images/branding/product/2x/googleg_48dp.png"
+                        style={styles.googleIcon}
+                        contentFit="contain"
+                      />
+                      <Text style={styles.googleBtnText}>Continue with Google</Text>
                     </>
                   )}
                 </TouchableOpacity>
               </>
-            ) : null}
-
-            {(selectedRole === 'user') ? (
-              <>
-                {!otpSent ? (
-                  <View style={styles.field}>
-                    <Text style={styles.label}>PHONE NUMBER</Text>
-                    <View style={styles.phoneInputContainer}>
-                      <View style={styles.countryCode}>
-                        <Text style={styles.flagEmoji}>🇮🇳</Text>
-                        <Text style={styles.codeText}>+91</Text>
-                      </View>
-                      <TextInput
-                        style={[styles.input, styles.phoneNumberInput]}
-                        value={phoneNumber}
-                        onChangeText={(val) => setPhoneNumber(val.replace(/\D/g, '').slice(0, 10))}
-                        placeholder="9876543210"
-                        placeholderTextColor="#3F3F46"
-                        keyboardType="phone-pad"
-                        maxLength={10}
-                      />
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
-                      onPress={() => { handleSendOTP(); }}
-                      disabled={loading}
-                    >
-                      {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>SEND OTP</Text>}
-                    </TouchableOpacity>
-                  </View>
-
-                ) : (
-                  <View style={styles.field}>
-                    {!!otpBanner && (
-                      <View style={styles.otpBanner}>
-                        <Text style={styles.otpBannerText}>{otpBanner}</Text>
-                      </View>
-                    )}
-                    <Text style={styles.label}>ENTER OTP</Text>
-                    <TextInput
-                      ref={otpInputRef}
-                      style={styles.input}
-                      value={otp}
-                      onChangeText={(val) => {
-                        const cleaned = val.replace(/\D/g, '').slice(0, 6);
-                        setOtp(cleaned);
-                        if (cleaned.length === 6) {
-                          handleVerifyOTP();
-                        }
-                      }}
-                      placeholder="6-digit code"
-                      placeholderTextColor="#3F3F46"
-                      keyboardType="number-pad"
-                      maxLength={6}
-                    />
-                    <TouchableOpacity
-                      style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
-                      onPress={handleVerifyOTP}
-                      disabled={loading}
-                    >
-                      {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>VERIFY OTP</Text>}
-                    </TouchableOpacity>
-                    <View style={styles.resendRow}>
-                      {resendCooldown > 0 ? (
-                        <Text style={styles.resendTimer}>Resend in {resendCooldown}s</Text>
-                      ) : (
-                        <TouchableOpacity onPress={() => { handleSendOTP(true); }} disabled={loading}>
-                          <Text style={styles.resendLink}>Resend OTP</Text>
-                        </TouchableOpacity>
-                      )}
-                      <Text style={styles.resendSep}> · </Text>
-                      <TouchableOpacity onPress={() => {
-                        setOtpSent(false);
-                        confirmationResult.current = null;
-                        setOtp('');
-                        setOtpBanner('');
-                        if (resendInterval.current) clearInterval(resendInterval.current);
-                        setResendCooldown(0);
-                      }}>
-                        <Text style={styles.resendLink}>Change number</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </>
-            ) : null}
-
+            )}
 
             {selectedRole !== 'user' && ENABLE_DEMO_LOGIN && (
               <View style={styles.demoCard}>
@@ -578,41 +764,8 @@ export default function LoginScreen() {
                       Fill Staff Credits
                     </Text>
                   </TouchableOpacity>
-
                 </View>
               </View>
-            )}
-
-            {selectedRole !== 'admin' && (
-              <>
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>OR</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.googleBtn, (googleLoading || !GOOGLE_CLIENT_ID) && { opacity: 0.4 }]}
-                  onPress={handleGoogleSignIn}
-                  disabled={googleLoading || !GOOGLE_CLIENT_ID}
-                  activeOpacity={0.85}
-                >
-                  {googleLoading ? (
-                    <ActivityIndicator color="#FFF" />
-                  ) : (
-                    <>
-                      <Svg width={20} height={20} viewBox="0 0 48 48">
-                        <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.33 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                        <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                        <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                        <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.67 14.62 48 24 48z"/>
-                        <Path fill="none" d="M0 0h48v48H0z"/>
-                      </Svg>
-                      <Text style={styles.googleBtnText}>Continue with Google</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </>
             )}
 
             {selectedRole === 'user' && (
@@ -625,8 +778,6 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {DialogComponent}
     </SafeAreaView>
   );
 }
@@ -635,39 +786,13 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
   scroll: { flexGrow: 1, paddingHorizontal: 32, paddingBottom: 40 },
   header: { marginTop: 40, marginBottom: 40, alignItems: 'center' },
-  logoPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0A0A0A',
-    borderRadius: 100,
-    padding: 6,
-    paddingRight: 20,
-    borderWidth: 1,
-    borderColor: '#18181B',
-  },
-  logoPillTextContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  logoPillTextWhite: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  logoPillTextGrey: {
-    color: '#71717A',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
   branding: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   logoText: { color: '#FFF', fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
   hero: { marginBottom: 32 },
   heading: { color: '#FFF', fontSize: 34, fontWeight: '900', letterSpacing: -1.5 },
   subheading: { color: '#71717A', fontSize: 16, marginTop: 4 },
   roleContainer: { marginBottom: 32 },
+  userModeContainer: { marginBottom: 28 },
   roleLabel: { color: '#3F3F46', fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 12 },
   roleTabs: {
     flexDirection: 'row',
@@ -689,14 +814,30 @@ const styles = StyleSheet.create({
   roleTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 100, zIndex: 1 },
   roleTabText: { color: '#71717A', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   roleTabTextActive: { color: '#000' },
+  userModeTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#050505',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#18181B',
+    padding: 4,
+    gap: 4,
+  },
+  userModeTab: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  userModeTabActive: {
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  userModeTabText: { color: '#71717A', fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },
+  userModeTabTextActive: { color: '#FFF' },
   form: { gap: 20 },
   field: { gap: 8 },
-  otpBanner: { backgroundColor: '#052e16', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: '#166534' },
-  otpBannerText: { color: '#4ade80', fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  resendRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  resendTimer: { color: '#52525B', fontSize: 13, fontWeight: '500' },
-  resendLink: { color: '#A1A1AA', fontSize: 13, fontWeight: '600' },
-  resendSep: { color: '#3F3F46', fontSize: 13 },
   label: { color: '#3F3F46', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
   input: { backgroundColor: '#0A0A0A', borderRadius: 16, padding: 16, color: '#FFF', fontSize: 15, borderWidth: 1, borderColor: '#18181B' },
   passwordWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0A0A0A', borderRadius: 16, borderWidth: 1, borderColor: '#18181B', overflow: 'hidden' },
@@ -706,6 +847,20 @@ const styles = StyleSheet.create({
   forgotPwText: { color: '#A1A1AA', fontSize: 12, fontWeight: '600' },
   primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: '#FFF', borderRadius: 100, paddingVertical: 18, marginTop: 12 },
   primaryBtnText: { color: '#000', fontSize: 14, fontWeight: '900', letterSpacing: 1.5 },
+  inlineAuthCard: { backgroundColor: '#0A0A0A', borderRadius: 24, borderWidth: 1, borderColor: '#18181B', padding: 16, gap: 12 },
+  otpTitle: { color: '#FFF', fontSize: 14, fontWeight: '900', letterSpacing: 0.8 },
+  otpSub: { color: '#71717A', fontSize: 13, lineHeight: 18 },
+  otpHint: { color: '#52525B', fontSize: 11, lineHeight: 16 },
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  phoneInput: { flex: 1 },
+  otpActionBtn: { backgroundColor: '#FFF', borderRadius: 16, minWidth: 110, paddingHorizontal: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+  otpActionBtnText: { color: '#000', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#18181B' },
+  dividerText: { color: '#52525B', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
+  googleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#0A0A0A', borderRadius: 100, paddingVertical: 18, borderWidth: 1, borderColor: '#18181B' },
+  googleIcon: { width: 20, height: 20 },
+  googleBtnText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
   demoCard: { backgroundColor: '#0A0A0A', borderRadius: 24, borderWidth: 1, borderColor: '#18181B', padding: 16, gap: 10 },
   demoLabel: { color: '#FFF', fontSize: 12, fontWeight: '900', letterSpacing: 1.6 },
   demoCopy: { color: '#71717A', fontSize: 13, lineHeight: 18 },
@@ -717,70 +872,4 @@ const styles = StyleSheet.create({
   footerLink: { alignItems: 'center', marginTop: 12 },
   footerLinkText: { color: '#71717A', fontSize: 14 },
   footerLinkAccent: { color: '#FFF', fontWeight: '800' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#18181B' },
-  dividerText: { color: '#3F3F46', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
-  googleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#0A0A0A', borderRadius: 100, paddingVertical: 17, borderWidth: 1, borderColor: '#27272A' },
-  googleBtnG: { color: '#FFF', fontSize: 15, fontWeight: '900', fontStyle: 'italic' },
-  googleBtnText: { color: '#E4E4E7', fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
-  phoneInputContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  countryCode: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#0A0A0A',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#18181B',
-  },
-  flagEmoji: {
-    fontSize: 20,
-  },
-  codeText: {
-    color: '#FFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  phoneNumberInput: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  recaptchaContainer: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 24,
-    height: 450,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#18181B',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-  },
-  modalTitle: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  closeText: {
-    color: '#71717A',
-    fontSize: 14,
-    fontWeight: '600',
-  },
 });
-

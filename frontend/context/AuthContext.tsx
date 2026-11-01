@@ -12,10 +12,6 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 const STORAGE_TOKEN_KEY = 'greyads_token';
 const STORAGE_USER_KEY  = 'greyads_user';
 
-// Roles recognized on the client.
-// 'superuser' is intentionally excluded — it is a legacy concept with no
-// defined access boundaries. Any account with that role will be treated as
-// 'admin' until the role is migrated server-side.
 export type UserRole = 'user' | 'staff' | 'admin';
 
 export interface AuthUser {
@@ -33,16 +29,12 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (token: string, user: AuthUser) => Promise<void>;
-  updateUser: (data: Partial<Pick<AuthUser, 'name' | 'phone' | 'avatar_url'>>) => Promise<void>;
+  updateUser: (data: Partial<Pick<AuthUser, 'name' | 'email' | 'phone' | 'avatar_url'>>) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// ---------------------------------------------------------------------------
-// Normalize a raw Firestore role string into a safe UserRole enum value.
-// Unknown or privileged legacy roles collapse to 'user' on the client.
-// ---------------------------------------------------------------------------
 function resolveRole(rawRole: string | undefined): UserRole {
   if (rawRole === 'admin' || rawRole === 'superuser') return 'admin';
   if (rawRole === 'staff') return 'staff';
@@ -50,97 +42,131 @@ function resolveRole(rawRole: string | undefined): UserRole {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]         = useState<AuthUser | null>(null);
-  const [token, setToken]       = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Tracks the timestamp of the last *explicit* login so we can distinguish
-  // a legitimate session from a transient Firebase null-state during startup.
   const lastManualLoginRef = useRef<number>(0);
+  const pendingLogoutTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  const userRef = useRef<AuthUser | null>(null);
 
-  // -------------------------------------------------------------------------
-  // Session Bootstrap — React to Firebase ID token changes
-  // -------------------------------------------------------------------------
   useEffect(() => {
-    // Hard timeout: if Firebase never resolves (e.g., no network), stop the
-    // splash screen after 10 seconds rather than hanging indefinitely.
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 10_000);
+    tokenRef.current = token;
+    userRef.current = user;
+  }, [token, user]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      try {
+        const entries = await AsyncStorage.multiGet([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
+        const cachedToken = entries[0]?.[1] || null;
+        const cachedUser = entries[1]?.[1] ? JSON.parse(entries[1][1]) as AuthUser : null;
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (cachedToken) {
+          setToken(cachedToken);
+        }
+
+        if (cachedUser) {
+          setUser(cachedUser);
+        }
+
+        // Remove artificial startup delay and unblock routing as soon as cache is restored.
+        setIsLoading(false);
+      } catch (error) {
+        console.warn('[AuthContext] Failed to restore cached session:', error);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    })();
 
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
-          // Check that the email is verified for email/password accounts.
-          // Phone and Google accounts are implicitly verified by their providers.
+          if (pendingLogoutTimeoutRef.current) {
+            clearTimeout(pendingLogoutTimeoutRef.current);
+            pendingLogoutTimeoutRef.current = null;
+          }
+
           const isEmailProvider = firebaseUser.providerData?.some(
-            (p: any) => p.providerId === 'password'
+            (p: any) => p.providerId === 'password',
           );
+
           if (isEmailProvider && !firebaseUser.emailVerified) {
-            // Do not grant a session to unverified email accounts.
-            // They will be prompted to verify on the login screen.
-            console.warn('[AuthContext] Email not verified — session refused.');
+            console.warn('[AuthContext] Email not verified - session refused.');
             await signOut(auth);
             await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
-            setToken(null);
-            setUser(null);
-            setIsLoading(false);
+            if (isMounted) {
+              setToken(null);
+              setUser(null);
+              setIsLoading(false);
+            }
             return;
           }
 
           const freshToken = await firebaseUser.getIdToken();
           await AsyncStorage.setItem(STORAGE_TOKEN_KEY, freshToken);
-          setToken(freshToken);
+          if (isMounted) {
+            setToken(freshToken);
+          }
 
           const userRef = doc(db, 'users', firebaseUser.uid);
-          const snap    = await getDoc(userRef);
-
+          const snap = await getDoc(userRef);
           let userData: AuthUser;
 
           if (snap.exists()) {
             const data: any = snap.data();
             userData = {
-              id:         snap.id,
-              name:       data.name       || firebaseUser.displayName || 'User',
-              email:      data.email      || firebaseUser.email       || '',
-              role:       resolveRole(data.role),
-              avatar_url: data.avatar_url || firebaseUser.photoURL    || undefined,
-              phone:      data.phone      || firebaseUser.phoneNumber  || undefined,
-              createdAt:  data.created_at?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+              id: snap.id,
+              name: data.name || firebaseUser.displayName || 'User',
+              email: data.email || firebaseUser.email || '',
+              role: resolveRole(data.role),
+              avatar_url: data.avatar_url || firebaseUser.photoURL || undefined,
+              phone: data.phone || firebaseUser.phoneNumber || undefined,
+              createdAt: data.created_at?.toDate?.()?.toISOString() ?? new Date().toISOString(),
             };
 
-            // Back-fill phone if Auth has it and Firestore doesn't
             if (firebaseUser.phoneNumber && !data.phone) {
-              await updateDoc(userRef, { phone: firebaseUser.phoneNumber });
+              await updateDoc(userRef, {
+                phone: firebaseUser.phoneNumber,
+                ...(firebaseUser.email && !data.email ? { email: firebaseUser.email } : {}),
+              });
             }
           } else {
-            // New user — always provision as 'user'. Privileged roles are
-            // set exclusively by server-side admin operations.
             userData = {
-              id:         firebaseUser.uid,
-              name:       firebaseUser.displayName || 'User',
-              email:      firebaseUser.email       || '',
-              phone:      firebaseUser.phoneNumber  || undefined,
-              role:       'user',
-              avatar_url: firebaseUser.photoURL    || undefined,
-              createdAt:  new Date().toISOString(),
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'User',
+              email: firebaseUser.email || '',
+              phone: firebaseUser.phoneNumber || undefined,
+              role: 'user',
+              avatar_url: firebaseUser.photoURL || undefined,
+              createdAt: new Date().toISOString(),
             };
 
             const toSave = Object.fromEntries(
-              Object.entries(userData).filter(([, v]) => v !== undefined)
+              Object.entries(userData).filter(([, value]) => value !== undefined),
             );
             await setDoc(userRef, { ...toSave, created_at: serverTimestamp() });
           }
 
           await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
-          setUser(userData);
+          if (isMounted) {
+            setUser(userData);
+          }
 
-          // Register FCM push token
           try {
             const authStatus = await messaging().requestPermission();
             const enabled =
               authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
               authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
             if (enabled) {
               const fcmToken = await messaging().getToken();
               if (fcmToken) {
@@ -154,36 +180,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.warn('[AuthContext] Push registration failed (non-fatal):', pushErr);
           }
         } else {
-          // Firebase reports no user.
-          // Security fix: if this isn't within 5 seconds of a manual login,
-          // treat it as a real session expiry and clear stored credentials.
           const timeSinceManualLogin = Date.now() - lastManualLoginRef.current;
-          const isTransientState = timeSinceManualLogin < 5_000;
+          const hasCachedSession = Boolean(tokenRef.current || userRef.current);
+          const isTransientState = timeSinceManualLogin < (hasCachedSession ? 20_000 : 5_000);
 
-          if (!isTransientState) {
-            console.log('[AuthContext] Firebase session expired — clearing stored credentials.');
-            await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
-            setToken(null);
-            setUser(null);
+          if (!isTransientState && !pendingLogoutTimeoutRef.current) {
+            pendingLogoutTimeoutRef.current = setTimeout(async () => {
+              pendingLogoutTimeoutRef.current = null;
+
+              if (auth.currentUser) {
+                return;
+              }
+
+              console.log('[AuthContext] Firebase session expired - clearing stored credentials.');
+              await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
+
+              if (isMounted) {
+                setToken(null);
+                setUser(null);
+                setIsLoading(false);
+              }
+            }, 3_000);
           }
         }
       } catch (error) {
         console.error('[AuthContext] Session setup error:', error);
-        // On critical errors, fall through to avoid infinite loading state
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     });
 
     return () => {
+      isMounted = false;
       unsubscribe();
-      clearTimeout(timer);
+      if (pendingLogoutTimeoutRef.current) {
+        clearTimeout(pendingLogoutTimeoutRef.current);
+      }
     };
   }, []);
 
-  // -------------------------------------------------------------------------
-  // Real-time user document listener — handles remote revocation
-  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!token || !user?.id) return;
 
@@ -204,10 +241,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (updatedRole !== user.role || data.name !== user.name) {
           const freshUser: AuthUser = {
             ...user,
-            role:       updatedRole,
-            name:       data.name       || user.name,
+            role: updatedRole,
+            name: data.name || user.name,
             avatar_url: data.avatar_url || user.avatar_url,
-            phone:      data.phone      || user.phone,
+            phone: data.phone || user.phone,
           };
           setUser(freshUser);
           await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(freshUser));
@@ -215,17 +252,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       (error) => {
         console.error('[AuthContext] User snapshot error:', error);
-      }
+      },
     );
 
     return () => unsubscribe();
-  }, [token, user?.id]);
+  }, [token, user?.id, user?.role, user?.name, user?.avatar_url, user?.phone]);
 
-  // -------------------------------------------------------------------------
-  // login — called after a successful Firebase sign-in on the auth screens
-  // -------------------------------------------------------------------------
   const login = async (newToken: string, newUser: AuthUser) => {
     lastManualLoginRef.current = Date.now();
+    if (pendingLogoutTimeoutRef.current) {
+      clearTimeout(pendingLogoutTimeoutRef.current);
+      pendingLogoutTimeoutRef.current = null;
+    }
     await AsyncStorage.setItem(STORAGE_TOKEN_KEY, newToken);
     await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(newUser));
     setToken(newToken);
@@ -233,30 +271,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   };
 
-  // -------------------------------------------------------------------------
-  // updateUser — only allows safe, non-privileged field updates
-  // -------------------------------------------------------------------------
-  const updateUser = async (data: Partial<Pick<AuthUser, 'name' | 'phone' | 'avatar_url'>>) => {
+  const updateUser = async (data: Partial<Pick<AuthUser, 'name' | 'email' | 'phone' | 'avatar_url'>>) => {
     if (!user || !token) return;
-    // Strip any keys not in the safe allowlist before sending
+
     const safeData: Record<string, any> = {};
-    if (data.name       !== undefined) safeData.name       = data.name;
-    if (data.phone      !== undefined) safeData.phone      = data.phone;
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.email !== undefined) safeData.email = data.email;
+    if (data.phone !== undefined) safeData.phone = data.phone;
     if (data.avatar_url !== undefined) safeData.avatar_url = data.avatar_url;
 
-    const res    = await api.patch('/auth/me', safeData);
+    const res = await api.patch('/auth/me', safeData);
     const nextUser: AuthUser = { ...user, ...res.user, role: resolveRole(res.user?.role) };
     await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(nextUser));
     setUser(nextUser);
   };
 
-  // -------------------------------------------------------------------------
-  // logout — signs out from all providers and clears local state
-  // -------------------------------------------------------------------------
   const logout = async () => {
     try {
       await signOut(auth);
-      try { await GoogleSignin.signOut(); } catch { /* already signed out */ }
+      try {
+        await GoogleSignin.signOut();
+      } catch {
+        // already signed out
+      }
       await AsyncStorage.multiRemove([STORAGE_TOKEN_KEY, STORAGE_USER_KEY]);
       setToken(null);
       setUser(null);

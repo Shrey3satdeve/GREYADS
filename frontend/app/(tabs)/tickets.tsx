@@ -4,13 +4,14 @@ import {
   RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ticket, Calendar, MapPin, QrCode, ArrowRight } from 'lucide-react-native';
 import { api } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../components/AppDialog';
 import { rw, rh, rf, rs } from '../../utils/responsive';
-import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { COLORS, FLOATING_TAB_BAR, RADIUS, SPACING } from '../../constants/theme';
 
 interface TicketItem {
   id: string;
@@ -43,7 +44,13 @@ export default function TicketsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showDialog } = useDialog();
+  const listBottomPadding =
+    FLOATING_TAB_BAR.height +
+    FLOATING_TAB_BAR.bottomOffset +
+    insets.bottom +
+    FLOATING_TAB_BAR.contentInset;
 
   const loadTickets = useCallback(async () => {
     try {
@@ -64,6 +71,11 @@ export default function TicketsScreen() {
   }, [showDialog]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
+  useFocusEffect(
+    useCallback(() => {
+      loadTickets();
+    }, [loadTickets]),
+  );
   const onRefresh = useCallback(() => { setRefreshing(true); loadTickets(); }, [loadTickets]);
 
   const renderTicket = ({ item }: { item: TicketItem }) => (
@@ -143,7 +155,7 @@ export default function TicketsScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderTicket}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FFF" />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: listBottomPadding }]}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -162,7 +174,7 @@ const styles = StyleSheet.create({
   emptySubtitle: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 12 },
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: RADIUS.full, backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border },
   retryText: { color: COLORS.textPrimary, fontWeight: '600' },
-  list: { padding: 20, gap: 12, paddingBottom: 110 },
+  list: { padding: 20, gap: 12 },
   ticketCard: {
     backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border,
     overflow: 'hidden',

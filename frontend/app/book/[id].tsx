@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -10,8 +11,9 @@ import {
   View,
   Modal,
   TextInput,
+  Image as RNImage,
 } from 'react-native';
-import { Image } from 'expo-image';
+import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar, CheckCircle, CreditCard, MapPin, Minus, Plus, Shield, X } from 'lucide-react-native';
@@ -23,7 +25,7 @@ import { rf, rs } from '../../utils/responsive';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../components/AppDialog';
 import RazorpayCheckout from 'react-native-razorpay';
-import { functions } from '../../utils/firebase';
+import { ensureProtectedFirebaseServicesReady, functions } from '../../utils/firebase';
 
 interface EventInfo {
   id: string;
@@ -37,22 +39,29 @@ interface EventInfo {
 }
 
 const ENABLE_MANUAL_BOOKING = process.env.EXPO_PUBLIC_ENABLE_MANUAL_BOOKING === '1';
+const ENABLE_PAYMENT_QA = __DEV__ || process.env.EXPO_PUBLIC_ENABLE_PAYMENT_QA === '1';
+const ALLOW_APPCHECK_FAILURE_FOR_BOOKING = true;
+const GREYADZ_RAZORPAY_LOGO = RNImage.resolveAssetSource(
+  require('../../assets/images/icon.png')
+).uri;
 
 export default function BookTicketScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState('');
   const [booked, setBooked] = useState(false);
   const [ticketId, setTicketId] = useState('');
   // removed redundant razorpayData and showRazorpay states
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, token, isLoading: authLoading } = useAuth();
   const { showDialog, DialogComponent } = useDialog();
   const [guests, setGuests] = useState<Array<{ name: string, age: string }>>([{ name: user?.name || '', age: '' }]);
+  const eventId = Array.isArray(id) ? String(id[0] || '').trim() : String(id || '').trim();
 
   // Sync guests array with quantity
   useEffect(() => {
@@ -75,17 +84,104 @@ export default function BookTicketScreen() {
     setGuests(next);
   };
 
-  const isFormValid = guests.every(g => g.name.trim().length > 2 && g.age.trim().length > 0);
+  const isFormValid = ENABLE_PAYMENT_QA
+    ? guests.every(g => g.name.trim().length > 2)
+    : guests.every(g => g.name.trim().length > 2 && g.age.trim().length > 0);
+
+  const isPlayStoreUpdateRequiredError = (error: any) => {
+    const combined = `${String(error?.code || '')} ${String(error?.message || '')}`.toLowerCase();
+
+    return (
+      combined.includes('play-store-outdated') ||
+      combined.includes('play_store_version_outdated') ||
+      combined.includes('integrity api error (-14)') ||
+      combined.includes('integrityserviceexception: -14') ||
+      combined.includes('play store is outdated') ||
+      combined.includes('play store needs to be updated')
+    );
+  };
+
+  const isUpiAppMissingError = (error: any) => {
+    const combined = `${String(error?.code || '')} ${String(error?.message || '')} ${String(error?.description || '')}`.toLowerCase();
+
+    return (
+      combined.includes('app not installed') ||
+      combined.includes('application not installed') ||
+      combined.includes('activity not found') ||
+      combined.includes('no activity found') ||
+      combined.includes('no app found') ||
+      combined.includes('could not find') ||
+      combined.includes('installed app') ||
+      combined.includes('upi app')
+    );
+  };
+
+  const normalizeContact = (value?: string | null) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.length === 10) return digits;
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    return '';
+  };
+
+  const openPlayStoreUpdate = async () => {
+    const marketUrl = 'market://details?id=com.android.vending';
+    const webUrl = 'https://support.google.com/googleplay/answer/15747876?hl=en';
+
+    try {
+      const canOpenMarket = await Linking.canOpenURL(marketUrl);
+      await Linking.openURL(canOpenMarket ? marketUrl : webUrl);
+    } catch {
+      try {
+        await Linking.openURL(webUrl);
+      } catch {
+        showDialog({
+          title: 'Update Required',
+          message: 'Please open Google Play Store manually, update it, and then retry your payment.',
+        });
+      }
+    }
+  };
 
   useEffect(() => {
-    if (!id) return;
-    api.get(`/events/${id}`)
-      .then((data: any) => setEvent(data.event))
-      .catch(() => showDialog({ title: 'Error', message: 'Failed to load event' }))
-      .finally(() => setLoading(false));
-  }, [id]);
+    if (!eventId || eventId === 'undefined' || eventId === 'null') {
+      setEvent(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const decodedEventId = decodeURIComponent(eventId);
+    const candidateIds = Array.from(new Set([eventId, decodedEventId].filter(Boolean)));
+
+    (async () => {
+      try {
+        for (const candidateId of candidateIds) {
+          const data: any = await api.get(`/events/${candidateId}`);
+          if (data?.event?.id) {
+            setEvent(data.event);
+            return;
+          }
+        }
+
+        setEvent(null);
+        showDialog({
+          title: 'Event Not Found',
+          message: 'This event link looks outdated. Please reopen the event from Home and try again.',
+        });
+      } catch {
+        setEvent(null);
+        showDialog({ title: 'Error', message: 'Failed to load event' });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [eventId, showDialog]);
 
   useEffect(() => {
+    if (__DEV__) {
+      return;
+    }
+
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.02, duration: 850, useNativeDriver: true }),
@@ -99,116 +195,230 @@ export default function BookTicketScreen() {
   const handleManualBooking = async () => {
     if (!event || !isFormValid) return;
     setBooking(true);
+    setProcessingLabel('Creating your booking...');
     try {
-      const data: any = await api.post('/tickets/book', { event_id: id, quantity, guests });
+      const data: any = await api.post('/tickets/book', { event_id: eventId, quantity, guests });
       setTicketId(data.ticket.id);
       setBooked(true);
     } catch (err: any) {
       showDialog({ title: 'Booking Failed', message: err.message || 'Something went wrong' });
     } finally {
       setBooking(false);
+      setProcessingLabel('');
     }
   };
 
-  const pollPaymentStatus = async (txnId: string, attempts = 0) => {
-    if (attempts > 6) {
-      showDialog({
-        title: 'Payment Pending',
-        message: 'Your payment is still processing. Open My Tickets in a few minutes to confirm.',
-        buttons: [{ label: 'Go to Tickets', style: 'default', onPress: () => router.replace('/(tabs)/tickets') }],
-      });
-      return;
+  const getPaymentErrorMessage = (error: any) => {
+    const code = String(error?.code || '').toLowerCase();
+    const rawMessage = String(error?.message || '').trim();
+    const combined = `${code} ${rawMessage}`.toLowerCase();
+
+    if (isPlayStoreUpdateRequiredError(error)) {
+      return 'Google Play Store is outdated on this device. Update Play Store, reopen the app, and retry your payment.';
     }
 
-    try {
-      const statusData: any = await api.get(`/payments/status/${txnId}`);
-      if (statusData.status === 'COMPLETED') {
-        setTicketId(statusData.ticket_id);
-        setBooked(true);
-        return;
-      }
-      if (statusData.status === 'FAILED') {
-        showDialog({ title: 'Payment Failed', message: 'Your payment was not successful. Please try again.' });
-        return;
-      }
-    } catch {
-      // Retry below.
+    if (combined.includes('unauthenticated') || combined.includes('sign in again')) {
+      return 'Your session expired before payment started. Please sign in again and retry.';
     }
 
-    setTimeout(() => {
-      pollPaymentStatus(txnId, attempts + 1);
-    }, 2500);
+    if (
+      combined.includes('app check') ||
+      combined.includes('appcheck') ||
+      combined.includes('attestation') ||
+      combined.includes('play integrity') ||
+      combined.includes('app verification') ||
+      combined.includes('integrityserviceexception')
+    ) {
+      return __DEV__
+        ? 'This debug build is not trusted by Firebase App Check yet. Add the App Check debug token, restart the app, and retry payment.'
+        : 'This app build could not be verified. Please install the latest official build and try again.';
+    }
+
+    if (isUpiAppMissingError(error)) {
+      return 'Selected UPI app is not available on this phone. Retry and choose another payment method or another installed UPI app.';
+    }
+
+    return rawMessage || 'Payment initiation failed';
+  };
+
+  const redirectToLogin = () => {
+    const redirect = encodeURIComponent(`/book/${String(eventId || '')}`);
+    router.replace(`/(auth)/login?redirect=${redirect}` as any);
   };
 
   const handlePayment = async () => {
     if (!event) return;
+    if (authLoading) {
+      showDialog({ title: 'Please Wait', message: 'We are still restoring your secure session. Try payment again in a moment.' });
+      return;
+    }
+
+    if (!token) {
+      showDialog({ title: 'Login Required', message: 'Please sign in again before making a payment.' });
+      redirectToLogin();
+      return;
+    }
+
     setPaying(true);
+    setProcessingLabel('Preparing secure payment...');
+    let activeOrderId: string | null = null;
     try {
-      const fn = functions.httpsCallable('initiatePayment');
-      const { data } = await fn({
-        amount: grand,
-        event_id: id,
+      console.log('[handlePayment] Starting payment initiation:', {
+        event_id: eventId,
         quantity,
+        guest_count: guests.length,
       });
 
-      console.log('[handlePayment] Order initiated:', data);
+      await ensureProtectedFirebaseServicesReady({ allowAppCheckFailure: ALLOW_APPCHECK_FAILURE_FOR_BOOKING || ENABLE_PAYMENT_QA });
 
-      const options = {
+      let data: any;
+      try {
+        data = await Promise.race([
+          api.post('/payments/initiate', {
+            event_id: eventId,
+            quantity,
+            guests,
+          }),
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Payment initiation timed out. Please retry.')), 20000);
+          }),
+        ]) as any;
+      } catch (initError: any) {
+        console.error('[handlePayment] Payment initiate failed:', initError);
+        throw initError;
+      }
+
+      console.log('[handlePayment] Payment initiation response received');
+      activeOrderId = data?.order_id || null;
+
+      if (!data?.order_id) {
+        throw new Error('Payment order was not created. Please try again.');
+      }
+
+      console.log('[handlePayment] Order initiated:', data);
+      setProcessingLabel('Opening Razorpay checkout...');
+
+      const options: any = {
         description: `Booking for ${event.title}`,
-        image: 'https://i.imgur.com/3g7u6Wq.png',
-        currency: 'INR',
+        image: GREYADZ_RAZORPAY_LOGO,
+        currency: (data as any).currency || 'INR',
         key: (data as any).key_id,
         amount: (data as any).amount,
         name: 'GreyAdz',
-        order_id: (data as any).order_id,
         prefill: {
           email: user?.email || '',
-          contact: '',
+          contact: normalizeContact(user?.phone),
           name: user?.name || '',
         },
+        retry: { enabled: true, max_count: 1 },
+        send_sms_hash: true,
         theme: { color: '#000000' }
       };
 
+      if ((data as any).order_id) {
+        options.order_id = (data as any).order_id;
+      }
+
       console.log('[handlePayment] Opening Razorpay with options:', JSON.stringify(options, null, 2));
 
-      RazorpayCheckout.open(options).then(async (result: any) => {
-        console.log('[handlePayment] Razorpay SUCCESS:', result);
-        setPaying(true);
-        try {
-          const verifyFn = functions.httpsCallable('verifyPayment');
-          const res = await verifyFn({
-            razorpay_payment_id: result.razorpay_payment_id,
-            razorpay_order_id: result.razorpay_order_id,
-            razorpay_signature: result.razorpay_signature,
-            event_id: id,
-            quantity,
-            guests,
-          });
+      const result: any = await RazorpayCheckout.open(options);
+      console.log('[handlePayment] Razorpay SUCCESS:', result);
+      setProcessingLabel('Verifying payment and generating ticket...');
 
-          console.log('[handlePayment] Verification result:', res.data);
-
-          if ((res.data as any).success) {
-            router.push(`/ticket/${(res.data as any).ticket_id}`);
-          } else {
-            throw new Error('Verification failed');
-          }
-        } catch (error: any) {
-          console.error('[handlePayment] Verification ERROR:', error);
-          showDialog({ title: 'Verification Failed', message: error.message || 'Error creating ticket' });
-        } finally {
-          setPaying(false);
-        }
-      }).catch((error: any) => {
-        console.error('[handlePayment] Razorpay ERROR:', error);
-        showDialog({ 
-          title: 'Payment Failed', 
-          message: error.description || 'Payment was not completed' 
+      try {
+        const res = await api.post('/payments/verify', {
+          razorpay_payment_id: result.razorpay_payment_id,
+          razorpay_order_id: result.razorpay_order_id,
+          razorpay_signature: result.razorpay_signature,
         });
-      });
+
+        console.log('[handlePayment] Verification result:', res);
+
+        if ((res as any).success && (res as any).ticket_id) {
+          router.replace(`/ticket/${(res as any).ticket_id}`);
+        } else if ((res as any).status === 'PENDING') {
+          router.replace(`/payment-result?txn_id=${result.razorpay_order_id}`);
+        } else {
+          throw new Error('Verification failed');
+        }
+      } catch (error: any) {
+        console.error('[handlePayment] Verification ERROR:', error);
+        router.replace(`/payment-result?txn_id=${result.razorpay_order_id}`);
+      }
     } catch (err: any) {
-      showDialog({ title: 'Payment Error', message: err.message || 'Payment initiation failed' });
+      if (err?.razorpay_payment_id || err?.razorpay_order_id || err?.razorpay_signature) {
+        console.error('[handlePayment] Unexpected success payload reached outer catch:', err);
+        router.replace(`/payment-result?txn_id=${err.razorpay_order_id}`);
+        return;
+      }
+
+      const isCheckoutError = activeOrderId && (typeof err?.code !== 'undefined' || typeof err?.description !== 'undefined');
+      if (isCheckoutError) {
+        const error = err;
+        console.error('[handlePayment] Razorpay ERROR:', error);
+        const isCancelled = error?.code === 0 || String(error?.description || '').toLowerCase().includes('cancel');
+        const message = error.description || 'Payment was not completed';
+
+        const handleCancelledOrder = async () => {
+          if (!activeOrderId) {
+            return false;
+          }
+
+          try {
+            const cancelFn = functions.httpsCallable('cancelPaymentOrder');
+            const cancelResult: any = await cancelFn({ reference_id: activeOrderId });
+            const cancelData = cancelResult?.data || {};
+
+            if (cancelData.status === 'COMPLETED' && cancelData.ticket_id) {
+              router.replace(`/ticket/${cancelData.ticket_id}`);
+              return true;
+            }
+
+            if (cancelData.status === 'PENDING') {
+              router.replace(`/payment-result?txn_id=${activeOrderId}`);
+              return true;
+            }
+          } catch (cancelError) {
+            console.error('[handlePayment] cancelPaymentOrder ERROR:', cancelError);
+          }
+
+          return false;
+        };
+
+        const handled = await handleCancelledOrder();
+        if (!handled) {
+          const paymentMessage = getPaymentErrorMessage({ ...error, message });
+          showDialog({
+            title: isCancelled ? 'Payment Cancelled' : isUpiAppMissingError(error) ? 'UPI App Not Available' : 'Payment Failed',
+            message: paymentMessage,
+            buttons: isPlayStoreUpdateRequiredError(error)
+              ? [
+                { label: 'Cancel', style: 'cancel' },
+                { label: 'Update Play Store', onPress: () => { void openPlayStoreUpdate(); } },
+              ]
+              : undefined,
+          });
+        }
+      } else {
+        const message = getPaymentErrorMessage(err);
+        const isSessionIssue = message.toLowerCase().includes('sign in again');
+        showDialog({
+          title: isSessionIssue ? 'Session Expired' : 'Payment Error',
+          message,
+          buttons: isPlayStoreUpdateRequiredError(err)
+            ? [
+              { label: 'Cancel', style: 'cancel' },
+              { label: 'Update Play Store', onPress: () => { void openPlayStoreUpdate(); } },
+            ]
+            : undefined,
+        });
+        if (isSessionIssue) {
+          redirectToLogin();
+        }
+      }
     } finally {
       setPaying(false);
+      setProcessingLabel('');
     }
   };
 
@@ -245,7 +455,7 @@ export default function BookTicketScreen() {
   const total = (event?.price || 0) * quantity;
   const fees = total > 0 ? Math.round(total * 0.05) : 0;
   const grand = total + fees;
-  const allowManualBooking = !!event && (event.price <= 0 || ENABLE_MANUAL_BOOKING);
+  const allowManualBooking = !!event && (event.price <= 0 || (ENABLE_MANUAL_BOOKING && user?.role === 'admin'));
 
   return (
     <View style={styles.container} testID="book-ticket-screen">
@@ -261,7 +471,7 @@ export default function BookTicketScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {event && (
           <View style={styles.eventCard}>
-            <Image
+            <ExpoImage
               source={{ uri: getEventImage(event.cover_image_url, event.category, event.title) }}
               style={styles.eventThumb}
               contentFit="cover"
@@ -368,6 +578,7 @@ export default function BookTicketScreen() {
             disabled={paying || booking || !isFormValid}
             onPress={handlePayment}
             activeOpacity={0.9}
+            testID="razorpay-pay-btn"
           >
             <LinearGradient
               colors={['#000000', '#1A1A1A']}
@@ -377,8 +588,8 @@ export default function BookTicketScreen() {
             >
               <View style={styles.paymentRow}>
                 <View style={styles.paymentLogoWrap}>
-                  <Image
-                    source={require('../../assets/images/rzp_final_v1.png')}
+                  <ExpoImage
+                    source={require('../../assets/images/razorpay-app-icon-hd.png')}
                     style={styles.paymentLogo}
                     contentFit="contain"
                   />
@@ -438,6 +649,15 @@ export default function BookTicketScreen() {
 
         <View style={{ height: rs(120) }} />
       </ScrollView>
+      {(paying || booking) && (
+        <View style={styles.processingOverlay}>
+          <View style={styles.processingCard}>
+            <ActivityIndicator color="#FFF" size="large" />
+            <Text style={styles.processingTitle}>Processing</Text>
+            <Text style={styles.processingText}>{processingLabel || 'Please wait while we complete this step.'}</Text>
+          </View>
+        </View>
+      )}
       {DialogComponent}
     </View>
   );
@@ -496,6 +716,10 @@ const styles = StyleSheet.create({
   directBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8), backgroundColor: COLORS.bgCard, borderRadius: RADIUS.full, paddingVertical: rs(14), borderWidth: 1, borderColor: COLORS.border },
   directBtnText: { color: COLORS.textPrimary, fontSize: rf(14), fontWeight: '700' },
   releaseNote: { color: COLORS.textTertiary, fontSize: rf(12), lineHeight: rf(18), marginTop: rs(14), textAlign: 'center' },
+  processingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center', padding: rs(24) },
+  processingCard: { width: '100%', maxWidth: rs(280), backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: rs(22), borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', gap: rs(10) },
+  processingTitle: { color: COLORS.textPrimary, fontSize: rf(18), fontWeight: '800' },
+  processingText: { color: COLORS.textSecondary, fontSize: rf(13), lineHeight: rf(20), textAlign: 'center' },
   successWrap: { flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center', padding: rs(32), gap: rs(12) },
   successBg: { width: rs(100), height: rs(100), borderRadius: rs(50), backgroundColor: COLORS.success + '12', alignItems: 'center', justifyContent: 'center', marginBottom: rs(8) },
   successIcon: { width: rs(80), height: rs(80), borderRadius: rs(40), backgroundColor: COLORS.success + '20', alignItems: 'center', justifyContent: 'center' },

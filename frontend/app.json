@@ -2,7 +2,7 @@
   "expo": {
     "name": "GreyAdz",
     "slug": "GreyAdz",
-    "version": "1.0.35",
+    "version": "1.0.36",
     "orientation": "portrait",
     "icon": "./assets/images/splash_logo.png",
     "scheme": "greyadz-payment",
@@ -17,7 +17,7 @@
       }
     },
     "android": {
-      "versionCode": 36,
+      "versionCode": 37,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#000000"
@@ -37,8 +37,7 @@
       ],
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.READ_MEDIA_IMAGES"
       ],
       "googleServicesFile": "./google-services.json"
     },
@@ -61,6 +60,16 @@
       [
         "expo-build-properties",
         {
+          "android": {
+            "buildToolsVersion": "35.0.0",
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24,
+            "kotlinVersion": "1.9.25",
+            "ndkVersion": "26.1.10909125",
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          },
           "ios": {
             "useFrameworks": "static"
           }
@@ -74,6 +83,7 @@
     },
     "extra": {
       "router": {},
+      "googleClientId": "420509611534-7km6iakrkkte4e43ht6pktr3uc1au1vh.apps.googleusercontent.com",
       "eas": {
         "projectId": "31611dba-ea52-4077-b195-62125452408f"
       }

@@ -92,7 +92,7 @@ export default function AdminDashboard() {
       setStats(prev => ({
         ...prev,
         total_tickets: tickets.length,
-        total_revenue: tickets.reduce((acc: number, d: any) => acc + (d.total_price || 0), 0),
+        total_revenue: tickets.reduce((acc: number, d: any) => acc + (d.charged_amount || d.total_price || 0), 0),
         total_events: prev?.total_events ?? 0,
         recent_events: prev?.recent_events ?? [],
         total_users: prev?.total_users ?? 0,
@@ -139,7 +139,7 @@ export default function AdminDashboard() {
         {
           label: 'Sign Out', style: 'destructive', onPress: async () => {
             await logout();
-            router.replace('/onboarding');
+            router.replace('/(auth)/login');
           }
         },
       ],

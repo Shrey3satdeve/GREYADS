@@ -35,7 +35,7 @@ export default defineConfig({
 
     /* Run your local dev server before starting the tests */
     webServer: {
-        command: 'npx expo start --web --port 8084',
+        command: 'cmd /c "set EXPO_PUBLIC_ENABLE_DEMO_LOGIN=1&& set EXPO_PUBLIC_E2E_WEB=1&& npx expo start --web --port 8084"',
         url: 'http://localhost:8084',
         timeout: 300000,
         reuseExistingServer: true,

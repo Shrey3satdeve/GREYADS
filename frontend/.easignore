@@ -15,3 +15,15 @@ playwright-report/
 test-results/
 preview/
 .vscode/
+*.log
+*.txt
+.expo-export-check/
+local_build*.log
+eas_build*.log
+gradle_error.txt
+signing_*.txt
+export_log.txt
+build_debug.log
+prebuild_err.txt
+greyadz-clean-final.png
+greyadz-home-clean.png

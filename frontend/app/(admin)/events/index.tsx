@@ -4,10 +4,10 @@ import {
   RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Calendar, MapPin, Trash2, Users, RotateCw, TrendingUp } from 'lucide-react-native';
 import { api } from '../../../utils/api';
-import { COLORS, CATEGORY_COLORS, RADIUS, SPACING } from '../../../constants/theme';
+import { COLORS, CATEGORY_COLORS, FLOATING_TAB_BAR, RADIUS, SPACING } from '../../../constants/theme';
 import { useDialog } from '../../../components/AppDialog';
 
 interface EventItem {
@@ -27,7 +27,13 @@ export default function AdminEventsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showDialog, DialogComponent } = useDialog();
+  const listBottomPadding =
+    FLOATING_TAB_BAR.height +
+    FLOATING_TAB_BAR.bottomOffset +
+    insets.bottom +
+    FLOATING_TAB_BAR.contentInset;
 
   const loadEvents = useCallback(async () => {
     try {
@@ -151,7 +157,7 @@ export default function AdminEventsScreen() {
           keyExtractor={item => item.id}
           renderItem={renderEvent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FFF" />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: listBottomPadding }]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
@@ -176,7 +182,7 @@ const styles = StyleSheet.create({
   headerSub: { color: COLORS.textTertiary, fontSize: 13, marginTop: 2 },
   fab: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.btnPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#FFF', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   loadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  list: { padding: 20, gap: 10, paddingBottom: 110 },
+  list: { padding: 20, gap: 10 },
   eventCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: 16, borderWidth: 1, borderColor: COLORS.border },
   eventTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
   catDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
@@ -186,8 +192,8 @@ const styles = StyleSheet.create({
   priceText: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '700' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10, flexWrap: 'wrap' },
   metaText: { color: COLORS.textSecondary, fontSize: 11, flex: 1 },
-  capacityRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  progressBg: { flex: 1, height: 4, backgroundColor: COLORS.bgTertiary, borderRadius: 2, overflow: 'hidden' },
+  capacityRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  progressBg: { flex: 1, minWidth: 0, height: 4, backgroundColor: COLORS.bgTertiary, borderRadius: 2, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 2 },
   capacityMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   capacityText: { color: COLORS.textTertiary, fontSize: 11 },
@@ -196,7 +202,7 @@ const styles = StyleSheet.create({
   emptyText: { color: COLORS.textSecondary, fontSize: 16 },
   createBtn: { backgroundColor: COLORS.btnPrimary, borderRadius: RADIUS.full, paddingHorizontal: 24, paddingVertical: 12 },
   createBtnText: { color: '#000', fontSize: 14, fontWeight: '700' },
-  eventFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  analyticsBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFEE0015', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#FFEE0030' },
+  eventFooter: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  analyticsBtn: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFEE0015', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#FFEE0030' },
   analyticsBtnText: { color: '#FFEE00', fontSize: 10, fontWeight: '800' },
 });

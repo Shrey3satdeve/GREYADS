@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { ScanLine, Zap, CheckCircle, XCircle, Clock, LogOut, AlertTriangle, RefreshCcw } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import BrandMark from '../../components/BrandMark';
+import { useDialog } from '../../components/AppDialog';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
@@ -48,6 +49,7 @@ export default function ScannerHomeScreen() {
   
   const { user, logout } = useAuth();
   const router = useRouter();
+  const { showDialog, DialogComponent } = useDialog();
   const bannerAnim = useRef(new Animated.Value(-120)).current;
   const resultTimeout = useRef<any>(null);
 
@@ -238,6 +240,7 @@ export default function ScannerHomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} testID="scanner-home-screen">
+      {DialogComponent}
       {renderResultBanner()}
       
       <ScrollView
@@ -258,7 +261,7 @@ export default function ScannerHomeScreen() {
             <TouchableOpacity style={styles.headerActionBtn} onPress={() => setShowEventPicker(true)}>
               <RefreshCcw size={18} color={COLORS.textSecondary} />
             </TouchableOpacity>
-            <TouchableOpacity testID="scanner-logout-btn" style={styles.logoutBtn} onPress={async () => { await logout(); router.replace('/onboarding'); }}>
+            <TouchableOpacity testID="scanner-logout-btn" style={styles.logoutBtn} onPress={async () => { await logout(); router.replace('/(auth)/login'); }}>
               <LogOut size={18} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -420,7 +423,7 @@ export default function ScannerHomeScreen() {
 
             <TouchableOpacity style={styles.pickerCloseBtn} onPress={() => {
               if (selectedEvent) setShowEventPicker(false);
-              else alert('Please select an event to continue.');
+              else showDialog({ title: 'Select Event', message: 'Please select an event to continue.' });
             }}>
               <Text style={styles.pickerCloseBtnText}>CANCEL</Text>
             </TouchableOpacity>

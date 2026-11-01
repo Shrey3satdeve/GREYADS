@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -15,6 +15,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../utils/api';
 import { COLORS, RADIUS } from '../../constants/theme';
+import { useAuth } from '../../context/AuthContext';
 
 interface Notif {
   id: string;
@@ -59,68 +60,64 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { user } = useAuth();
+
+  const normalizeNotifications = useCallback((items: any[]): Notif[] => (
+    items
+      .map((n) => ({
+        id: n.id,
+        type: n.type || 'promo',
+        title: n.title,
+        body: n.body || n.message,
+        created_at: n.created_at,
+        read: Boolean(n.read ?? n.is_read),
+      }))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  ), []);
+
+  const loadNotifications = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+
+    try {
+      const data = await api.get('/notifications/my');
+      setNotifications(normalizeNotifications(data.notifications || []));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [normalizeNotifications]);
 
   useEffect(() => {
-    setLoading(true);
-    
-    // Subscribe to personal notifications
-    const unsubPersonal = api.subscribe('notifications', (notifs) => {
-      setNotifications(prev => {
-        const personal = notifs.map(n => ({
-          id: n.id,
-          type: n.type,
-          title: n.title,
-          body: n.message,
-          created_at: n.created_at,
-          read: n.is_read
-        }));
-        
-        // Merge with existing (broadcasts)
-        const combined = [...prev, ...personal].reduce((acc: any[], curr) => {
-          if (!acc.find(x => x.id === curr.id)) acc.push(curr);
-          return acc;
-        }, []);
+    loadNotifications();
 
-        return combined.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-      });
-      setLoading(false);
-    });
+    const unsubPersonal = user?.id
+      ? api.subscribe('notifications', () => {
+          void loadNotifications();
+        }, {
+          filters: [['user_id', '==', user.id]],
+          disableOrderBy: true,
+          maxItems: 30,
+        })
+      : () => {};
 
-    // Subscribe to broadcasts
-    const unsubBroadcast = api.subscribe('broadcasts', (bcs) => {
-      setNotifications(prev => {
-        const broadcasts = bcs.map(n => ({
-          id: n.id,
-          type: n.type || 'promo',
-          title: n.title,
-          body: n.message,
-          created_at: n.created_at,
-          read: false // Broadcasts are usually unread by default for all
-        }));
-        
-        // Combine, unique by ID, and sort
-        const combined = [...prev, ...broadcasts].reduce((acc: any[], curr) => {
-          if (!acc.find(x => x.id === curr.id)) acc.push(curr);
-          return acc;
-        }, []);
-        
-        return combined.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-      });
+    const unsubBroadcast = api.subscribe('broadcasts', () => {
+      void loadNotifications();
+    }, {
+      orderByField: 'created_at',
+      orderDirection: 'desc',
+      maxItems: 20,
     });
 
     return () => {
       unsubPersonal();
       unsubBroadcast();
     };
-  }, []);
+  }, [loadNotifications, user?.id]);
 
   const markAsRead = async (id: string) => {
     const target = notifications.find((notification) => notification.id === id);
-    if (!target || target.read) {
+    if (!target || target.read || id.startsWith('ticket-')) {
       return;
     }
 
@@ -139,6 +136,11 @@ export default function NotificationsScreen() {
   const deleteNotification = async (id: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setNotifications((current) => current.filter((n) => n.id !== id));
+
+    if (id.startsWith('ticket-')) {
+      return;
+    }
+
     try {
       await api.delete(`/notifications/${id}`);
     } catch (err) {
@@ -146,7 +148,7 @@ export default function NotificationsScreen() {
     }
   };
 
-  const renderRightActions = (id: string, progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+  const renderRightActions = (id: string, _progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
     const scale = dragX.interpolate({
       inputRange: [-100, 0],
       outputRange: [1, 0],
@@ -188,7 +190,7 @@ export default function NotificationsScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); }} tintColor="#FFF" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadNotifications(true)} tintColor="#FFF" />}
         >
           {notifications.length === 0 ? (
             <View style={styles.emptyWrap}>

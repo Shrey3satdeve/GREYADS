@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, RefreshControl, Animated,
@@ -6,8 +7,9 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, MapPin, Calendar, TrendingUp, Zap, Sun, CloudSun, Moon } from 'lucide-react-native';
+import { Search, Heart, Sun, CloudSun, Moon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import BrandMark from '../../components/BrandMark';
 import { api } from '../../utils/api';
@@ -21,7 +23,40 @@ interface Event {
   available_tickets: number; total_tickets: number;
 }
 
+type RawEvent = Partial<Event> & {
+  event_id?: string;
+  _id?: string;
+};
+
 const FIRST_NAME_MAX = 10;
+const EVENTS_CACHE_KEY = 'greyads_events_cache_v2';
+
+const normalizeEvent = (raw: RawEvent): Event | null => {
+  const resolvedId = String(raw?.id || raw?.event_id || raw?._id || '').trim();
+  if (!resolvedId || resolvedId === 'undefined' || resolvedId === 'null') {
+    return null;
+  }
+
+  return {
+    id: resolvedId,
+    title: String(raw?.title || '').trim(),
+    date: String(raw?.date || ''),
+    venue: String(raw?.venue || '').trim(),
+    cover_image_url: String(raw?.cover_image_url || ''),
+    price: Number(raw?.price || 0),
+    category: String(raw?.category || 'Other'),
+    available_tickets: Number(raw?.available_tickets || 0),
+    total_tickets: Number(raw?.total_tickets || 0),
+  };
+};
+
+const normalizeEvents = (rawList: unknown): Event[] => {
+  if (!Array.isArray(rawList)) return [];
+
+  return rawList
+    .map((item) => normalizeEvent((item || {}) as RawEvent))
+    .filter((item): item is Event => !!item);
+};
 
 export default function HomeScreen() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -29,6 +64,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
+  const [wishlistCount, setWishlistCount] = useState(0);
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -39,33 +75,88 @@ export default function HomeScreen() {
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const didRunSearchEffectRef = useRef(false);
+  const hasEventsRef = useRef(false);
 
   useEffect(() => {
-    fetchEvents();
+    hasEventsRef.current = events.length > 0;
+  }, [events.length]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const cached = await AsyncStorage.getItem(EVENTS_CACHE_KEY);
+        if (!cached) return;
+        const parsed = JSON.parse(cached);
+        const normalizedCached = normalizeEvents(parsed);
+        if (normalizedCached.length > 0) {
+          setEvents(normalizedCached);
+          setLoading(false);
+        } else {
+          await AsyncStorage.removeItem(EVENTS_CACHE_KEY);
+        }
+      } catch {
+        // ignore cache restore issues
+      }
+    })();
+
+    void fetchEvents();
   }, [category]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, [events]);
 
-  const fetchEvents = async (isRefresh = false) => {
+  const loadWishlistCount = useCallback(async () => {
+    if (!user?.id) {
+      setWishlistCount(0);
+      return;
+    }
+
+    try {
+      const data = await api.get('/wishlist/my');
+      setWishlistCount(Array.isArray(data?.events) ? data.events.length : 0);
+    } catch {
+      setWishlistCount(0);
+    }
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadWishlistCount();
+    }, [loadWishlistCount]),
+  );
+
+  const fetchEvents = async (isRefresh = false, opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
     if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    else if (!silent) setLoading(true);
     try {
       const q = category !== 'All' ? `category=${category}` : '';
       const s = search ? `&search=${encodeURIComponent(search)}` : '';
       const data = await api.get(`/events?limit=20${q ? '&' + q : ''}${s}`);
-      const evts: Event[] = data.events || [];
+      const evts = normalizeEvents(data.events);
       setEvents(evts);
+      if (!search && category === 'All') {
+        await AsyncStorage.setItem(EVENTS_CACHE_KEY, JSON.stringify(evts));
+      }
     } catch { }
     if (isRefresh) setRefreshing(false);
-    else setLoading(false);
+    else if (!silent) setLoading(false);
   };
 
   const onRefresh = useCallback(() => fetchEvents(true), [category, search]);
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchEvents(), 400);
+    if (!didRunSearchEffectRef.current) {
+      didRunSearchEffectRef.current = true;
+      return;
+    }
+
+    // Prevent duplicate mount fetch and keep search responsive with debounce.
+    const timer = setTimeout(() => {
+      void fetchEvents(false, { silent: hasEventsRef.current });
+    }, 300);
     return () => clearTimeout(timer);
   }, [search]);
 
@@ -91,8 +182,13 @@ export default function HomeScreen() {
                 </View>
               </View>
             </View>
-            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(tabs)/notifications')}>
-              <Zap size={rf(16)} color="#FFF" strokeWidth={2.5} />
+            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/wishlist' as any)}>
+              <Heart size={rf(16)} color="#FFF" strokeWidth={2.5} />
+              {wishlistCount > 0 && (
+                <View style={styles.headerBadge}>
+                  <Text style={styles.headerBadgeText}>{wishlistCount > 9 ? '9+' : wishlistCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -291,7 +387,9 @@ const styles = StyleSheet.create({
   logoBrandText: { flexDirection: 'row', marginLeft: rs(6) },
   brandGrey: { color: '#FFF', fontSize: rf(12), fontWeight: '900', letterSpacing: 0.5 },
   brandAdz: { color: '#71717A', fontSize: rf(12), fontWeight: '900', letterSpacing: 0.5 },
-  iconButton: { width: rs(36), height: rs(36), borderRadius: 18, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  iconButton: { width: rs(36), height: rs(36), borderRadius: 18, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', position: 'relative' },
+  headerBadge: { position: 'absolute', top: rs(4), right: rs(3), minWidth: rs(16), height: rs(16), paddingHorizontal: rs(3), borderRadius: rs(8), backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
+  headerBadgeText: { color: '#FFF', fontSize: rf(9), fontWeight: '800' },
 
   greetingSection: { marginBottom: rs(20) },
   greetingTextGroup: { gap: rs(4) },

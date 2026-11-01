@@ -43,6 +43,7 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
+  const [editEmail, setEditEmail] = useState(user?.email || '');
   const [editPhone, setEditPhone] = useState(user?.phone || '');
   const [saving, setSaving] = useState(false);
   const router = useRouter();
@@ -79,6 +80,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (editModal) {
       setEditName(user?.name || '');
+      setEditEmail(user?.email || '');
       setEditPhone(user?.phone || '');
     }
   }, [editModal, user]);
@@ -90,7 +92,11 @@ export default function ProfileScreen() {
     }
     setSaving(true);
     try {
-      await updateUser({ name: editName.trim(), phone: editPhone.trim() });
+      await updateUser({
+        name: editName.trim(),
+        email: editEmail.trim().toLowerCase(),
+        phone: editPhone.trim(),
+      });
       setEditModal(false);
       showDialog({ title: 'Success ✅', message: 'Profile updated successfully' });
     } catch (err) {
@@ -111,7 +117,7 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             await logout();
-            router.replace('/onboarding');
+            router.replace('/(auth)/login');
           },
         },
       ],
@@ -214,7 +220,7 @@ export default function ProfileScreen() {
           <Text style={styles.sectionHeaderText}>Preferences</Text>
         </View>
         <View style={styles.actionCard}>
-          <MenuRow icon={Bell} label="Notifications" onPress={() => { }} rightText={stats.notifications > 0 ? 'On' : 'Off'} />
+          <MenuRow icon={Bell} label="Notifications" onPress={() => router.push('/(tabs)/notifications')} rightText={stats.notifications > 0 ? 'On' : 'Off'} />
           <MenuRow icon={Settings} label="App Settings" onPress={() => { }} />
         </View>
 
@@ -262,6 +268,19 @@ export default function ProfileScreen() {
                   onChangeText={setEditName}
                   placeholder="Enter your name"
                   placeholderTextColor={COLORS.textTertiary}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={editEmail}
+                  onChangeText={setEditEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={COLORS.textTertiary}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
                 />
               </View>
 

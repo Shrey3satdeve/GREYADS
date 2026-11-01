@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Dimensions, FlatList, Share, Alert,
+  ActivityIndicator, Dimensions, FlatList, Share,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Heart, MapPin, Calendar, Clock, Tag, Users, Share2 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../utils/api';
 import BrandMark from '../../components/BrandMark';
+import { useDialog } from '../../components/AppDialog';
 import { COLORS, CATEGORY_COLORS, RADIUS, SPACING, getCategoryImage, getEventImage } from '../../constants/theme';
+import { useAuth } from '../../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
@@ -31,6 +33,33 @@ interface EventDetail {
   tags: string[];
   status: string;
 }
+
+const sanitizeText = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
+
+const hasMeaningfulText = (value: unknown) => {
+  const normalized = sanitizeText(value);
+  if (!normalized) return false;
+  if (/^-+$/.test(normalized)) return false;
+
+  const lowered = normalized.toLowerCase();
+  return !['n/a', 'na', 'none', 'null', 'undefined', 'tbd'].includes(lowered);
+};
+
+const normalizeTags = (value: unknown) => {
+  const rawTags = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+
+  return Array.from(
+    new Set(
+      rawTags
+        .map((tag) => sanitizeText(tag))
+        .filter((tag) => hasMeaningfulText(tag))
+    )
+  );
+};
 
 // Carousel slide — uri is already resolved by getEventImage
 function CarouselImage({ uri, fallbackUri }: { uri: string; fallbackUri: string }) {
@@ -53,21 +82,65 @@ function formatTime(d: string) {
 }
 
 export default function EventDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
+  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
+  const [wishlistBusy, setWishlistBusy] = useState(false);
   const [activeImg, setActiveImg] = useState(0);
   const router = useRouter();
+  const { token } = useAuth();
+  const { showDialog, DialogComponent } = useDialog();
+  const eventId = useMemo(() => {
+    if (Array.isArray(id)) return String(id[0] || '').trim();
+    return String(id || '').trim();
+  }, [id]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!eventId || eventId === 'undefined' || eventId === 'null') {
+      setEvent(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    api.get(`/events/${id}`)
-      .then(data => setEvent(data.event))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+    const decodedEventId = decodeURIComponent(eventId);
+    const candidateIds = Array.from(new Set([eventId, decodedEventId].filter(Boolean)));
+
+    (async () => {
+      try {
+        for (const candidateId of candidateIds) {
+          const data = await api.get(`/events/${candidateId}`);
+          if (data?.event?.id) {
+            setEvent(data.event);
+            return;
+          }
+        }
+        setEvent(null);
+      } catch {
+        setEvent(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!token || !eventId || eventId === 'undefined' || eventId === 'null') {
+      setLiked(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const data = await api.get(`/wishlist/check/${eventId}`);
+        setLiked(Boolean(data?.liked));
+      } catch {
+        setLiked(false);
+      }
+    })();
+  }, [eventId, token]);
 
   const handleShare = async () => {
     if (!event) return;
@@ -77,16 +150,55 @@ export default function EventDetailScreen() {
         url: 'https://greyadz.com/events/' + event.id, // Primary for iOS
       });
     } catch (error: any) {
-      Alert.alert('Share failed', error.message);
+      showDialog({ title: 'Share Failed', message: error?.message || 'Unable to share this event right now.' });
     }
   };
 
-  const toggleLike = () => {
-    setLiked(!liked);
-    // In a real app, this would also call Firestore to save the favorite
-    if (!liked) {
-      // Logic for adding to favorites
+  const toggleLike = async () => {
+    if (!event) return;
+    if (!token) {
+      router.push({
+        pathname: '/(auth)/login' as any,
+        params: { redirect: `/event/${event.id}` },
+      } as any);
+      return;
     }
+
+    const nextLiked = !liked;
+    setWishlistBusy(true);
+    setLiked(nextLiked);
+
+    try {
+      if (nextLiked) {
+        await api.post('/wishlist', { event_id: event.id });
+      } else {
+        await api.delete(`/wishlist/${event.id}`);
+      }
+    } catch (error: any) {
+      setLiked(!nextLiked);
+      showDialog({
+        title: 'Wishlist Update Failed',
+        message: error?.message || 'Please try again.',
+      });
+    } finally {
+      setWishlistBusy(false);
+    }
+  };
+
+  const handleBookPress = () => {
+    if (!event || event.available_tickets === 0) {
+      return;
+    }
+
+    if (!token) {
+      router.push({
+        pathname: '/(auth)/login' as any,
+        params: { redirect: `/book/${event.id}` },
+      } as any);
+      return;
+    }
+
+    router.push(`/book/${event.id}` as any);
   };
 
   if (loading) {
@@ -101,8 +213,8 @@ export default function EventDetailScreen() {
     return (
       <View style={styles.loadWrap}>
         <Text style={styles.errorText}>Event not found</Text>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={{ color: '#FFF' }}>Go Back</Text>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} style={styles.backBtn}>
+          <Text style={{ color: '#FFF' }}>Browse Events</Text>
         </TouchableOpacity>
       </View>
     );
@@ -112,6 +224,12 @@ export default function EventDetailScreen() {
   const soldPct = event.total_tickets > 0
     ? Math.round(((event.total_tickets - event.available_tickets) / event.total_tickets) * 100)
     : 0;
+  const stickyBarBottom = Math.max(insets.bottom + 8, 16);
+  const stickyBarHeight = 92;
+  const eventDescription = hasMeaningfulText(event.description)
+    ? sanitizeText(event.description)
+    : null;
+  const eventTags = normalizeTags(event.tags);
 
   const fallbackImg = getCategoryImage(event.category, event.title);
   const carouselData = (event.images && event.images.length > 0)
@@ -120,7 +238,11 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container} testID="event-detail-screen">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      {DialogComponent}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: stickyBarBottom + stickyBarHeight + 32 }}
+      >
         {/* Hero Carousel */}
         <View style={styles.hero}>
           <FlatList
@@ -159,7 +281,7 @@ export default function EventDetailScreen() {
               <TouchableOpacity testID="share-btn" style={styles.circleBtn} onPress={handleShare}>
                 <Share2 size={18} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity testID="like-btn" style={[styles.circleBtn, liked && { backgroundColor: '#EF4444' }]} onPress={toggleLike}>
+              <TouchableOpacity testID="like-btn" style={[styles.circleBtn, liked && { backgroundColor: '#EF4444' }, wishlistBusy && { opacity: 0.7 }]} onPress={toggleLike} disabled={wishlistBusy}>
                 <Heart size={18} color="#FFF" fill={liked ? '#FFF' : 'none'} />
               </TouchableOpacity>
             </View>
@@ -228,15 +350,19 @@ export default function EventDetailScreen() {
           </View>
 
           {/* Description */}
-          <Text style={styles.sectionTitle}>About</Text>
-          <Text style={styles.description}>{event.description}</Text>
+          {eventDescription && (
+            <>
+              <Text style={styles.sectionTitle}>About</Text>
+              <Text style={styles.description}>{eventDescription}</Text>
+            </>
+          )}
 
           {/* Tags */}
-          {(event.tags ?? []).length > 0 && (
+          {eventTags.length > 0 && (
             <>
               <Text style={styles.sectionTitle}>Tags</Text>
               <View style={styles.tags}>
-                {event.tags.map((tag) => (
+                {eventTags.map((tag) => (
                   <View key={tag} style={styles.tag}>
                     <Tag size={10} color={COLORS.textTertiary} />
                     <Text style={styles.tagText}>{tag}</Text>
@@ -256,7 +382,7 @@ export default function EventDetailScreen() {
       </ScrollView>
 
       {/* Sticky Book CTA */}
-      <View style={styles.bookBar}>
+      <View style={[styles.bookBar, { bottom: stickyBarBottom, paddingBottom: Math.max(insets.bottom, 14) }]}>
         <View>
           <Text style={styles.bookPriceLabel}>Per ticket</Text>
           <Text style={styles.bookPrice}>₹{event.price.toLocaleString()}</Text>
@@ -264,7 +390,7 @@ export default function EventDetailScreen() {
         <TouchableOpacity
           testID="book-ticket-btn"
           style={[styles.bookBtn, event.available_tickets === 0 && styles.bookBtnDisabled]}
-          onPress={() => event.available_tickets > 0 && router.push(`/book/${event.id}`)}
+          onPress={handleBookPress}
           activeOpacity={0.85}
           disabled={event.available_tickets === 0}
         >
@@ -319,7 +445,7 @@ const styles = StyleSheet.create({
   orgAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
   orgAvatarText: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700' },
   orgName: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '600' },
-  bookBar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingBottom: 36, backgroundColor: COLORS.bgSecondary, borderTopWidth: 1, borderTopColor: COLORS.border },
+  bookBar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, backgroundColor: COLORS.bgSecondary, borderTopWidth: 1, borderTopColor: COLORS.border },
   bookPriceLabel: { color: COLORS.textTertiary, fontSize: 11, marginBottom: 2 },
   bookPrice: { color: COLORS.textPrimary, fontSize: 22, fontWeight: '800' },
   bookBtn: { backgroundColor: COLORS.btnPrimary, borderRadius: RADIUS.full, paddingHorizontal: 32, paddingVertical: 14, shadowColor: '#FFF', shadowOpacity: 0.1, shadowRadius: 15, elevation: 5 },

@@ -76,7 +76,7 @@ export default function CreateEventScreen() {
     const filename = `events/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
     
     // In React Native with @react-native-firebase/storage, putFile is much more stable than put(blob)
-    if (Platform.OS !== 'web' && uri.startsWith('file://')) {
+    if (Platform.OS !== 'web' && (uri.startsWith('file://') || uri.startsWith('/'))) {
       const storageRef = storage.ref(filename);
       const cleanUri = uri.replace('file://', '');
       await storageRef.putFile(cleanUri);
@@ -110,18 +110,23 @@ export default function CreateEventScreen() {
         tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
       };
       if (posterUris.length > 0) {
-        setLoading(true); // Ensure loading is still on
-        // Upload all images to Firebase Storage if they aren't already remote URLs
-        const uploadPromises = posterUris.map(uri => 
+        const uploadResults = await Promise.allSettled(posterUris.map(uri => 
           (uri.startsWith('https://') || uri.startsWith('http://')) 
             ? Promise.resolve(uri) 
             : uploadImage(uri)
-        );
-        const imageUrls = await Promise.all(uploadPromises);
-        payload.cover_image_url = imageUrls[0];
-        payload.images = imageUrls;
-      }
- else {
+        ));
+        const imageUrls = uploadResults
+          .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled' && !!result.value)
+          .map((result) => result.value);
+
+        if (imageUrls.length > 0) {
+          payload.cover_image_url = imageUrls[0];
+          payload.images = imageUrls;
+        } else {
+          payload.cover_image_url = getCategoryImage(form.category, form.title);
+          payload.images = [payload.cover_image_url];
+        }
+      } else {
         payload.cover_image_url = getCategoryImage(form.category, form.title);
         payload.images = [payload.cover_image_url];
       }

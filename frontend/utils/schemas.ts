@@ -13,6 +13,7 @@ export const SignupSchema = z.object({
 
 export const UpdateProfileSchema = z.object({
   name: z.string().trim().min(2, "Name too short").max(80, "Name too long").transform(stripHtml).optional(),
+  email: z.string().trim().email("Invalid email format").toLowerCase().optional().or(z.literal('')),
   phone: z.string().trim().regex(/^\+?[0-9]{10,15}$/, "Invalid phone format").optional().or(z.literal('')),
   avatar_url: z.string().url("Invalid avatar URL").optional().or(z.literal('')),
 });
@@ -33,4 +34,10 @@ export const BookingSchema = z.object({
   event_id: z.string().min(10),
   amount: z.number().positive(),
   quantity: z.number().int().min(1).max(10), // Limit to 10 tickets per booking
+});
+
+export const PaymentVerifySchema = z.object({
+  razorpay_payment_id: z.string().min(10),
+  razorpay_order_id: z.string().min(10),
+  razorpay_signature: z.string().min(30),
 });

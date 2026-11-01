@@ -1,19 +1,37 @@
 import 'react-native-gesture-handler';
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
-import { useRouter, useSegments } from 'expo-router';
+import { useGlobalSearchParams, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { LogBox } from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import '@react-native-firebase/functions';
 import messaging from '@react-native-firebase/messaging';
-import { Linking, Alert } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useDialog } from '../components/AppDialog';
 
 function RootRedirect() {
   const { user, token, isLoading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const globalParams = useGlobalSearchParams<{ redirect?: string | string[] }>();
+  const { showDialog, DialogComponent } = useDialog();
+
+  const requestedRedirect = Array.isArray(globalParams.redirect)
+    ? globalParams.redirect[0]
+    : globalParams.redirect;
+
+  const isSafeRedirectPath = (value?: string) =>
+    Boolean(value && value.startsWith('/') && !value.startsWith('//'));
+
+  useEffect(() => {
+    // Keep the booking CTA tappable in emulator QA builds by hiding the LogBox banner.
+    if (__DEV__) {
+      LogBox.ignoreLogs(['Open debugger to view warnings.']);
+    }
+  }, []);
 
   useEffect(() => {
     console.log('[RootLayout] Routing Check:', { token: !!token, segments, isLoading });
@@ -27,9 +45,20 @@ function RootRedirect() {
     const inRestrictedUserTab = segments.some(s => s === 'tickets' || s === 'notifications' || s === 'profile');
     const inPublicTabs = inTabs && !inRestrictedUserTab;
     const inPublicBrowse = inPublicTabs || segments.some(s => s === 'event');
+    const inBooking = segments.some(s => s === 'book');
+    const inProtectedArea = inAdmin || inScanner || inRestrictedUserTab || inBooking;
 
     if (!token) {
-      if ((segments as any).length === 0 || ((segments as any).length === 1 && (segments[0] as any) === 'index')) {
+      if (inProtectedArea && !inAuth) {
+        if (inBooking && segments[1]) {
+          router.replace({
+            pathname: '/(auth)/login',
+            params: { redirect: `/book/${String(segments[1])}` },
+          } as any);
+        } else {
+          router.replace('/(auth)/login');
+        }
+      } else if ((segments as any).length === 0 || ((segments as any).length === 1 && (segments[0] as any) === 'index')) {
         router.replace('/onboarding');
       }
     } else {
@@ -41,6 +70,8 @@ function RootRedirect() {
         router.replace('/(admin)' as any);
       } else if (isStaff && !inScanner) {
         router.replace('/(scanner)' as any);
+      } else if (isUser && inAuth && isSafeRedirectPath(requestedRedirect)) {
+        router.replace(requestedRedirect as any);
       } else if (isUser && (inAuth || inOnboarding || inAdmin || inScanner)) {
         router.replace('/(tabs)' as any);
       } else if (isStaff && inAdmin) {
@@ -51,19 +82,19 @@ function RootRedirect() {
         router.replace('/(admin)' as any);
       }
     }
-  }, [token, user, isLoading, segments]);
+  }, [token, user, isLoading, segments, requestedRedirect]);
 
   useEffect(() => {
     // Handle foreground messages
     const unsubscribe = messaging().onMessage(async remoteMessage => {
-      Alert.alert(
-        remoteMessage.notification?.title || 'New Notification',
-        remoteMessage.notification?.body || 'You have a new update in GreyAdz.'
-      );
+      showDialog({
+        title: remoteMessage.notification?.title || 'New Notification',
+        message: remoteMessage.notification?.body || 'You have a new update in GreyAdz.',
+      });
     });
 
     return unsubscribe;
-  }, []);
+  }, [showDialog]);
 
   useEffect(() => {
     // Handle deep links from Razorpay Android SDK (greyadz-payment:///)
@@ -73,7 +104,8 @@ function RootRedirect() {
       try {
         const parsed = new URL(url);
         const txnId = parsed.searchParams.get('txn_id') ||
-                      parsed.searchParams.get('razorpay_payment_id');
+                      parsed.searchParams.get('razorpay_payment_id') ||
+                      parsed.searchParams.get('razorpay_order_id');
         if (txnId) {
           router.replace(`/payment-result?txn_id=${txnId}` as any);
         } else {
@@ -94,7 +126,7 @@ function RootRedirect() {
     return () => sub.remove();
   }, [router]);
 
-  return null;
+  return DialogComponent;
 }
 
 export default function RootLayout() {
@@ -108,12 +140,24 @@ export default function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="onboarding" />
             <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="(admin)" />
-            <Stack.Screen name="(scanner)" />
-            <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="book/[id]" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-            <Stack.Screen name="payment-result" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="(admin)" />
+          <Stack.Screen name="(scanner)" />
+          <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen
+            name="book/[id]"
+            options={{
+              animation: 'slide_from_bottom',
+              presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+            }}
+          />
+          <Stack.Screen
+            name="payment-result"
+            options={{
+              animation: 'slide_from_bottom',
+              presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+            }}
+          />
           </Stack>
         </AuthProvider>
       </SafeAreaProvider>

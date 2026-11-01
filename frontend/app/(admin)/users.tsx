@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Users, Crown, Shield, User, LogOut, RotateCw } from 'lucide-react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { api } from '../../utils/api';
-import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+import { COLORS, FLOATING_TAB_BAR, RADIUS, SPACING } from '../../constants/theme';
 import { useDialog } from '../../components/AppDialog';
 
 interface UserItem {
@@ -26,7 +26,13 @@ export default function UsersScreen() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const insets = useSafeAreaInsets();
   const { showDialog, DialogComponent } = useDialog();
+  const listBottomPadding =
+    FLOATING_TAB_BAR.height +
+    FLOATING_TAB_BAR.bottomOffset +
+    insets.bottom +
+    FLOATING_TAB_BAR.contentInset;
 
   const loadUsers = useCallback(async () => {
     try {
@@ -180,7 +186,7 @@ export default function UsersScreen() {
           keyExtractor={item => item.id}
           renderItem={renderUser}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FFF" />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: listBottomPadding }]}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListEmptyComponent={() => (
@@ -205,7 +211,7 @@ const styles = StyleSheet.create({
   summaryCount: { fontSize: 20, fontWeight: '800' },
   summaryLabel: { color: COLORS.textTertiary, fontSize: 11 },
   loadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingHorizontal: 20, paddingBottom: 110, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, marginHorizontal: 20, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
+  list: { paddingHorizontal: 20, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, marginHorizontal: 20, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 18, fontWeight: '800' },

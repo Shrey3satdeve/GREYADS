@@ -1,17 +1,58 @@
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
-import storage from '@react-native-firebase/storage';
-import functions from '@react-native-firebase/functions';
-import appCheck from '@react-native-firebase/app-check';
+import appModule from '@react-native-firebase/app';
+import authModule from '@react-native-firebase/auth';
+import firestoreModule from '@react-native-firebase/firestore';
+import functionsModule from '@react-native-firebase/functions';
+import storageModule from '@react-native-firebase/storage';
+import appCheckModule from '@react-native-firebase/app-check';
+import { Platform } from 'react-native';
 
-// Initialize App Check
-// Use Play Integrity provider for Android production
-const rnAppCheck = appCheck();
-rnAppCheck.activate('playIntegrity', true); // true = allow debug token in development
+type ProtectedFirebaseOptions = {
+  allowAppCheckFailure?: boolean;
+};
 
-const db = firestore();
-const authInstance = auth();
-const storageInstance = storage();
-const functionsInstance = functions().app.functions('asia-south1');
+const appCheckProvider = String(process.env.EXPO_PUBLIC_FIREBASE_APP_CHECK_ANDROID_PROVIDER || '').trim().toLowerCase();
+const appCheckDebugToken = String(process.env.EXPO_PUBLIC_FIREBASE_APP_CHECK_DEBUG_TOKEN || '').trim();
 
-export { authInstance as auth, db, storageInstance as storage, functionsInstance as functions, rnAppCheck as appCheck };
+let didAttemptAppCheckActivation = false;
+
+export const firebase = appModule;
+export const auth = authModule();
+export const db = firestoreModule();
+export const storage = storageModule();
+export const functions = functionsModule();
+export const functionsAsia = appModule.app().functions('asia-south1');
+export const appCheck = appCheckModule();
+
+export async function ensureProtectedFirebaseServicesReady(
+  options: ProtectedFirebaseOptions = {},
+) {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
+  if (didAttemptAppCheckActivation) {
+    return;
+  }
+
+  didAttemptAppCheckActivation = true;
+
+  try {
+    if (appCheckProvider === 'debug') {
+      // Debug App Check is only used for local QA builds.
+      console.log('[firebase] Android App Check debug mode enabled.', appCheckDebugToken ? 'Debug token present.' : 'No explicit debug token provided.');
+      await appCheck.activate('debug', true);
+      return;
+    }
+
+    if (appCheckProvider === 'playintegrity' || appCheckProvider === 'play_integrity') {
+      await appCheck.activate('playIntegrity', true);
+      return;
+    }
+  } catch (error) {
+    if (!options.allowAppCheckFailure) {
+      throw error;
+    }
+
+    console.warn('[firebase] App Check activation skipped:', error);
+  }
+}
